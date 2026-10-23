@@ -1,0 +1,31 @@
+name: 问题反馈
+description: 报告歌词、来源、页面或构建问题
+body:
+  - type: markdown
+    attributes:
+      value: 请先核对支持的 YTM 版本。日志请脱敏，不要上传账号信息、设备序列号、签名文件、宿主 APK 或完整歌词。
+  - type: input
+    id: environment
+    attributes:
+      label: 使用环境
+      description: 模块版本、Android 版本、YTM 版本与 versionCode、框架版本及 WebView 版本
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 说明如何触发，包括是否有原生歌词、所选来源及歌曲版本；请勿粘贴完整歌词。
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 预期与实际表现
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志或截图（可选）
+      description: 只附与故障有关的 YtmLyrics 片段，遮挡通知、头像和个人信息。

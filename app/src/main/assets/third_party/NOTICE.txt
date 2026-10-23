@@ -1,0 +1,23 @@
+YTM Lyrics — third-party attribution
+
+QQ / NetEase protocol and QRC crypto adaptations:
+Copyright 2026 absswds. Apache License 2.0 (see Apache-2.0.txt).
+Repository: https://github.com/absswds/Spotify_lyric
+Revision: 827a0f483e7808b4b749adbffdd9227ae3035b89
+Files: lyrics/qqmusic/QQMusicLyricsSource.kt, QrcConverter.kt, QrcDecrypter.kt;
+       lyrics/netease/NeteaseLyricsSource.kt, NeteaseApi.kt.
+Changes: Java, sequential bounded requests, stable numeric IDs, explicit failures,
+word timing validation, source translations, and stable-ID binding enrichment.
+QRC decryption uses QQ's non-standard DES variant and zlib, not standard JCE DES.
+The upstream credits WXRIW/Lyricify-Lyrics-Helper (Apache-2.0) for request
+parameters and format/crypto implementations.
+https://github.com/WXRIW/Lyricify-Lyrics-Helper
+No Spotify, notification, account, machine-translation, or upstream UI code is included.
+
+AMLL Core 0.6.0 — AGPL-3.0-only:
+https://github.com/amll-dev/applemusic-like-lyrics
+The local renderer bundles AMLL and its runtime dependencies. Full notices are
+included in AMLL-NOTICES.txt. The only upstream change is the manual-scroll
+resume delay (500 ms -> 3000 ms); see demo/build.mjs for the reproducible patch.
+
+These code licenses do not grant rights to lyric text returned by services.

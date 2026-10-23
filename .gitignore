@@ -1,0 +1,43 @@
+# Local build and dependency caches
+.gradle/
+.build-cache/
+**/build/
+**/node_modules/
+local.properties
+
+# Private tooling, device data and APK reverse-engineering inputs
+/.tooling/
+/.analysis/
+/.device/
+/.agents/
+/.codex/
+/.aws/
+*.apk
+*.apkm
+*.apks
+*.aab
+*.dex
+*.hprof
+*.log
+*.jks
+*.keystore
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+.npmrc
+keystore.properties
+signing.properties
+
+# Release binaries/archives belong in GitHub Releases, not the source tree
+/dist/
+
+# Editor and OS state
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+Desktop.ini

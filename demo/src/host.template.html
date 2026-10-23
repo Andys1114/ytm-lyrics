@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="dark"><title>YTM Lyrics · AMLL</title>
+<style>/* __AMLL_CSS__ */
+:root{--album-edge:#24242b}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;color:#fff4ee;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--album-edge)}
+#ambient{position:absolute;inset:0;overflow:hidden;pointer-events:none;isolation:isolate;background:var(--album-edge)}
+#ambient::before{content:"";position:absolute;inset:-48px;background-image:var(--album-image,none);background-size:cover;background-position:center;filter:blur(42px);opacity:.6}
+#ambient canvas{position:absolute;width:100%;height:100%;inset:0}
+#ambient[data-state="fallback"] canvas{display:none}
+#ambient::after{content:"";position:absolute;inset:0;background:linear-gradient(var(--album-edge),transparent 26%),linear-gradient(#0003,#0005);pointer-events:none}
+#lyrics{position:relative;height:100%;width:100%;mask-image:linear-gradient(transparent,#000 7%,#000 90%,transparent);-webkit-mask-image:linear-gradient(transparent,#000 7%,#000 90%,transparent)}
+.amll-lyric-player,.amll-lyric-player.dom{--amll-lp-font-size:clamp(27px,7.2vw,38px);--amll-lp-color:#fff8f1;--amll-lp-line-width-aspect:1;--amll-lp-line-padding-x:.65em;font-weight:750;letter-spacing:-.6px}
+.amll-lyric-player [class*="_lyricSubLine"]{font-size:max(18px,.62em);font-weight:450;line-height:1.5;letter-spacing:0}
+.amll-lyric-player .FmKaba_lyricLine.FmKaba_active > .FmKaba_lyricSubLine{opacity:1;transition:opacity .16s ease-out}
+.line-only .FmKaba_lyricMainLine span{mask-image:none!important;transform:none!important;filter:none!important}
+#render-error{position:absolute;inset:auto 20px 20px;font-size:14px;color:#fff0de}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
+</style></head><body><div id="ambient" aria-hidden="true" data-state="empty"></div><div id="lyrics" tabindex="0" aria-label="自定义歌词，可滚动或点击跳转"></div><div id="render-error" role="status"></div>
+<script>/* __AMLL_BUNDLE__ */</script>
+</body></html>

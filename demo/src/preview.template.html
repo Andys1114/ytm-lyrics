@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="color-scheme" content="dark">
+  <title>慢慢亮 · AMLL 逐字歌词预览</title>
+  <style>
+    /* __AMLL_CSS__ */
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color:#fff6ef; background:#392624; font-synthesis:none; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:280px; }
+    button,input { font:inherit; }
+    button { cursor:pointer; }
+    button:focus-visible,input:focus-visible,.viewport:focus-visible { outline:2px solid #ffdfc8; outline-offset:5px; }
+    .ambient { position:fixed; inset:0; overflow:hidden; z-index:-1; background:linear-gradient(135deg,#764940,#392d35 65%,#282b36); }
+    .ambient::before,.ambient::after { content:""; position:absolute; inset:-30%; filter:blur(75px); }
+    .ambient::before { background:radial-gradient(ellipse at 25% 30%,#e19266a8,transparent 45%),radial-gradient(ellipse at 75% 65%,#9e6377a0,transparent 48%); transform:translate(var(--ambient-x,0px),var(--ambient-y,0px)) rotate(var(--ambient-angle,0deg)); }
+    .ambient::after { background:radial-gradient(ellipse at 75% 10%,#de9c6850,transparent 45%),linear-gradient(0deg,#171e2c80,transparent 75%); }
+    main { max-width:1280px; margin:auto; padding:30px 54px 22px; }
+    .masthead { display:flex; align-items:center; justify-content:space-between; gap:20px; font-size:11px; letter-spacing:1.8px; color:#fff3eaa6; }
+    .brand { display:flex; gap:10px; align-items:center; font-weight:650; }
+    .brand-mark { display:flex; gap:3px; height:18px; align-items:center; }
+    .brand-mark i { width:3px; height:9px; background:currentColor; border-radius:2px; }
+    .brand-mark i:nth-child(2) { height:18px; } .brand-mark i:nth-child(3) { height:13px; }
+    .simulation { letter-spacing:.3px; font-size:12px; text-align:right; }
+    .player { display:grid; grid-template-columns:minmax(250px,360px) minmax(0,1fr); gap:clamp(52px,7vw,104px); align-items:center; min-height:calc(100svh - 112px); }
+    .now-playing { min-width:0; padding:30px 0; }
+    .artwork { aspect-ratio:1; position:relative; overflow:hidden; border-radius:10px; box-shadow:0 25px 65px #160c1545,0 1px 1px #ffffff25 inset; background:linear-gradient(160deg,#e7a77a,#aa6c65 48%,#4d4b61 80%,#293546); }
+    .artwork::before { content:""; position:absolute; width:66%; height:66%; border-radius:50%; top:13%; left:18%; background:radial-gradient(circle at 50% 40%,#ffe9b7,#e9aa86 58%,#ce8f7b00 70%); filter:blur(1px); }
+    .artwork::after { content:""; position:absolute; inset:52% -50% -40%; border-radius:50%; transform:rotate(-16deg); background:linear-gradient(160deg,#9e6d6b,#4b485e 38%,#283b4b 80%); box-shadow:0 -18px 50px #734f5955; }
+    .cover-type { position:absolute; top:9%; left:9%; z-index:1; font-size:clamp(25px,3vw,39px); font-weight:300; letter-spacing:8px; writing-mode:vertical-rl; color:#fff2d7; text-shadow:0 1px 15px #633e4b35; }
+    .cover-caption { position:absolute; bottom:8%; right:8%; z-index:1; font-size:9px; letter-spacing:3px; color:#f8e0d0b0; }
+    .song-info { margin:25px 0 26px; }
+    h1 { margin:0 0 6px; font-size:25px; line-height:1.35; letter-spacing:.3px; font-weight:700; }
+    .song-info p { margin:0; font-size:14px; color:#ffeae0a8; }
+    .timeline { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .seek { grid-column:1/-1; width:100%; height:20px; margin:0; appearance:none; background:transparent; cursor:ew-resize; --progress:0%; }
+    .seek::-webkit-slider-runnable-track { height:4px; border-radius:4px; background:linear-gradient(to right,#fff1e6b8 var(--progress),#fff1e626 var(--progress)); }
+    .seek::-moz-range-track { height:4px; background:#fff1e626; border-radius:4px; }
+    .seek::-moz-range-progress { height:4px; background:#fff1e6b8; }
+    .seek::-webkit-slider-thumb { appearance:none; width:10px; height:10px; margin-top:-3px; background:#fff4ec; border-radius:50%; }
+    .seek::-moz-range-thumb { width:10px; height:10px; border:0; background:#fff4ec; border-radius:50%; }
+    .time { font-size:11px; font-variant-numeric:tabular-nums; color:#ffeae08c; }
+    .duration { text-align:right; }
+    .transport-buttons { display:flex; align-items:center; justify-content:center; gap:25px; margin-top:10px; }
+    .play { display:inline-flex; gap:10px; align-items:center; justify-content:center; border:0; background:transparent; color:#fff5ee; min-width:112px; min-height:60px; border-radius:30px; font-size:15px; font-weight:600; }
+    .play:hover { background:#fff1e610; }
+    .play-icon { width:21px; height:26px; display:block; }
+    .play-icon::before { content:""; display:block; border-top:13px solid transparent; border-bottom:13px solid transparent; border-left:21px solid currentColor; }
+    .play[aria-pressed="true"] .play-icon::before { width:19px; height:26px; border:0; border-left:6px solid; border-right:6px solid; }
+    .restart { border:0; border-radius:22px; min-height:44px; padding:0 14px; color:#ffeadeaf; background:#fff1e60a; font-size:12px; white-space:nowrap; }
+    .restart:hover { background:#fff1e615; }
+    .play-status { display:flex; gap:7px; align-items:center; justify-content:center; min-height:24px; color:#ffeae085; font-size:11px; }
+    .status-dot { width:4px; height:4px; border-radius:50%; background:currentColor; }
+    .is-playing .status-dot { color:#fff3e4; }
+    .panel { min-width:0; }
+    .panel-header { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px 6px; }
+    h2 { margin:0; font-size:13px; font-weight:600; color:#ffeae0b0; }
+    .translation-toggle { display:flex; align-items:center; gap:8px; min-height:44px; font-size:12px; cursor:pointer; color:#ffeae0bb; white-space:nowrap; }
+    .translation-toggle input { appearance:none; width:29px; height:18px; border-radius:12px; margin:0; background:#fff2df30; position:relative; cursor:pointer; }
+    .translation-toggle input::before { content:""; position:absolute; top:3px; left:3px; width:12px; height:12px; border-radius:50%; background:#fff5ed; transition:transform 150ms; }
+    .translation-toggle input:checked { background:#fff2df70; }
+    .translation-toggle input:checked::before { transform:translateX(11px); }
+    .viewport { height:clamp(420px,72svh,700px); position:relative; min-width:0; -webkit-mask-image:linear-gradient(transparent,#000 9%,#000 84%,transparent); mask-image:linear-gradient(transparent,#000 9%,#000 84%,transparent); }
+    .amll-lyric-player { --amll-lp-font-size:clamp(32px,3.5vw,45px); --amll-lp-color:#fff8f0; --amll-lp-line-width-aspect:1; --amll-lp-line-padding-x:.22em; font-weight:750; letter-spacing:-.8px; }
+    .amll-lyric-player.dom { --amll-lp-line-width-aspect:1; --amll-lp-line-padding-x:.22em; }
+    .amll-lyric-player [class*="_lyricSubLine"] { font-size:max(18px,.62em); font-weight:450; line-height:1.5; letter-spacing:0; }
+    .amll-lyric-player .FmKaba_lyricLine.FmKaba_active > .FmKaba_lyricSubLine{opacity:1;transition:opacity .16s ease-out}
+    .viewport:focus-visible { outline-offset:2px; }
+    .panel-bottom { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:3px 12px 10px; font-size:11px; color:#ffeae07d; }
+    .follow.is-free { color:#fff0df; }
+    .phrase-status { font-variant-numeric:tabular-nums; }
+    footer { color:#ffeae07a; font-size:11px; display:flex; justify-content:space-between; gap:15px; line-height:1.7; }
+    @media (max-width:980px) {
+      main { padding:20px 24px 18px; }
+      .player { grid-template-columns:1fr; gap:10px; min-height:0; }
+      .now-playing { display:grid; grid-template-columns:64px minmax(0,1fr); align-items:center; gap:0 15px; padding:27px 0 0; }
+      .artwork { width:64px; border-radius:7px; grid-row:1; }
+      .cover-type { font-size:12px; letter-spacing:2px; top:10%; left:10%; }
+      .cover-caption { display:none; }
+      .song-info { margin:0; } h1 { font-size:19px; margin-bottom:3px; }
+      .song-info p { font-size:12px; }
+      .transport { grid-column:1/-1; grid-row:2; margin-top:19px; }
+      .timeline { gap:5px; }
+      .transport-buttons { margin-top:0; gap:20px; }
+      .play { min-height:48px; }
+      .play-icon { transform:scale(.8); }
+      .play-status { min-height:19px; }
+      .panel-header { padding:0 4px; }
+      .viewport { height:clamp(350px,57svh,580px); }
+      .amll-lyric-player { --amll-lp-font-size:34px; }
+      .panel-bottom { padding:9px 4px 17px; }
+      footer { font-size:10px; }
+      .footer-detail { display:none; }
+    }
+    @media (max-width:350px) {
+      main { padding-left:18px; padding-right:18px; }
+      .masthead { gap:10px; } .brand { font-size:10px; letter-spacing:1px; }
+      .simulation { font-size:10px; }
+      .amll-lyric-player { --amll-lp-font-size:30px; }
+    }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important; } }
+  </style>
+</head>
+<body>
+<div class="ambient" aria-hidden="true"></div>
+<main>
+  <header class="masthead"><span class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>YTM LYRICS</span><span class="simulation">模拟时间轴 · 无音频</span></header>
+  <div class="player">
+    <section class="now-playing" aria-label="自写歌词示例与播放控制">
+      <div class="artwork" role="img" aria-label="原创抽象封面，暖色落日与山丘"><span class="cover-type">慢慢亮</span><span class="cover-caption">A LITTLE LIGHT</span></div>
+      <div class="song-info"><h1>慢慢亮</h1><p>原创双语示例 · A little light</p></div>
+      <section class="transport" aria-label="模拟播放控制">
+        <div class="timeline"><input id="seek" class="seek" type="range" aria-label="播放进度" aria-valuetext="0 秒，共 30 秒" min="0" max="30" step="0.01" value="0"><output id="current-time" class="time" for="seek">00:00.0</output><span class="time duration">00:30.0</span></div>
+        <div class="transport-buttons"><button class="play" id="play" type="button" aria-pressed="false"><span class="play-icon" aria-hidden="true"></span><span id="play-label">播放</span></button><button class="restart" id="restart" type="button">重新开始</button></div>
+        <span class="play-status" id="play-status" role="status"><i class="status-dot" aria-hidden="true"></i><span id="status-text">已暂停</span></span>
+      </section>
+    </section>
+    <section class="panel" data-mode="smooth" aria-labelledby="lyrics-title">
+      <header class="panel-header"><h2 id="lyrics-title">逐字歌词</h2><label class="translation-toggle"><input id="show-translation" type="checkbox" checked><span>显示译文</span></label></header>
+      <div class="viewport" tabindex="0" aria-label="逐字歌词，可手动滚动"></div>
+      <div class="panel-bottom"><span class="follow">自动跟随</span><span class="phrase-status">01 / 07</span></div>
+    </section>
+  </div>
+  <footer><span>AMLL 0.6.0 · 真实渲染预览</span><span class="footer-detail">逐字填色 · 弹簧滚动 · 译文</span></footer>
+  <noscript>请启用 JavaScript，以播放这个本地歌词演示。</noscript>
+</main>
+<details class="credits"><summary>开源组件与许可</summary><div>歌词渲染：AMLL Core 0.6.0（AGPL-3.0-only）。下方包含随页面打包的组件许可证。构建源码在同目录 src/，版本固定于 package-lock.json。</div><pre>__THIRD_PARTY_LICENSES__</pre></details>
+<style>.credits{max-width:1172px;margin:0 auto;padding:0 24px 20px;font-size:11px;color:#ffeae080}.credits summary{cursor:pointer;width:fit-content;min-height:32px}.credits div{line-height:1.8}.credits pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;line-height:1.5}</style>
+<script id="timeline-model">/* __TIMELINE_MODEL__ */</script>
+<script>/* __AMLL_BUNDLE__ */</script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+name: Build and check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: demo/package-lock.json
+      - name: Install renderer dependencies
+        run: npm --prefix demo ci --legacy-peer-deps --ignore-scripts
+      - name: Generate and test renderer
+        run: |
+          npm --prefix demo run build
+          npm --prefix demo test
+      - name: Check generated files are committed
+        run: git diff --exit-code -- demo/lyrics-preview.html demo/host-preview.html demo/licenses/THIRD_PARTY.txt app/src/main/assets/amll/lyrics.html app/src/main/assets/third_party/AMLL-NOTICES.txt
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Test, lint and assemble debug APK
+        run: bash ./gradlew :core:check :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --console plain
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: check-reports
+          path: |
+            core/build/reports/tests/
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload test-signed APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: ytm-lyrics-ci-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

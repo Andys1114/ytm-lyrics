@@ -1,0 +1,24 @@
+{
+  "name": "ytm-lyrics-amll-preview",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node lyrics-preview.test.cjs && node host-clock.test.mjs && node album-background.test.mjs"
+  },
+  "dependencies": {
+    "@applemusic-like-lyrics/core": "https://registry.npmjs.org/@applemusic-like-lyrics/core/-/core-0.6.0.tgz",
+    "@pixi/app": "7.4.3",
+    "@pixi/core": "7.4.3",
+    "@pixi/display": "7.4.3",
+    "@pixi/filter-blur": "7.4.3",
+    "@pixi/filter-bulge-pinch": "5.1.1",
+    "@pixi/filter-color-matrix": "7.4.3",
+    "@pixi/sprite": "7.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "license": "AGPL-3.0-only"
+}

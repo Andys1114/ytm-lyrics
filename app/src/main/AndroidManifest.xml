@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:label="YTM Lyrics" android:description="@string/module_description" android:icon="@drawable/ic_module"
+        android:allowBackup="false" android:dataExtractionRules="@xml/backup_rules"
+        android:supportsRtl="true" android:theme="@android:style/Theme.Material.NoActionBar">
+    </application>
+</manifest>
