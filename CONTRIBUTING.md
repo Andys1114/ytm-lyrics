@@ -2,6 +2,8 @@
 
 先阅读 [构建说明](docs/building.md) 和 [架构](docs/architecture.md)。本项目按 YTM 9.41.52 / 94152240 适配，变更宿主版本要同时更新 Hook、静态定位依据与验收范围。
 
+从工作分支向 `main` 提交 PR，解决讨论后合并。无需另一位审阅者批准，不强制 CI 通过；CI 仅在 Actions 页面手动运行。`main` 禁止强推和删除，维护者也通过 PR 提交改动。
+
 ## 改动放在哪里
 
 - 新来源：实现 `core/LyricsSource`，返回稳定来源／歌曲 ID 与 `Candidate`，在 `SourceRegistry` 注册；不要为新来源修改播放器 Hook。

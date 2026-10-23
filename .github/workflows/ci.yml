@@ -1,8 +1,6 @@
 name: Build and check
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -38,6 +36,10 @@ jobs:
           npm --prefix demo test
       - name: Check generated files are committed
         run: git diff --exit-code -- demo/lyrics-preview.html demo/host-preview.html demo/licenses/THIRD_PARTY.txt app/src/main/assets/amll/lyrics.html app/src/main/assets/third_party/AMLL-NOTICES.txt
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Test, lint and assemble debug APK

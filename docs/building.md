@@ -64,4 +64,4 @@ python -m http.server 63158 --bind 127.0.0.1 --directory demo
 
 JUnit 报告在 `core/build/reports/tests/test/` 和 `app/build/reports/tests/testDebugUnitTest/`；Lint 报告在 `app/build/reports/lint-results-debug.html`。当前固定 targetSdk 36 有一项 OldTargetApi 提示。是否通过应看本次运行结果，历史检查记录不能代替当前候选的验证。
 
-GitHub Actions 会重建渲染器，运行 Node／JUnit／Lint／APK 构建，并提供 14 天的测试报告与临时调试 APK。工作流不含维护者签名和自动发布步骤。
+GitHub Actions 仅手动触发：在仓库 Actions → Build and check → Run workflow 中选择分支。运行时初始化 Android SDK，重建渲染器，运行 Node／JUnit／Lint／APK 构建，并提供 14 天的测试报告与临时调试 APK。提交和 PR 不会自动构建，工作流不含维护者签名和自动发布步骤。

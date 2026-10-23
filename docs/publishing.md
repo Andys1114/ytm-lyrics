@@ -2,9 +2,10 @@
 
 ## 提交源代码
 
-项目仓库为 [Andys1114/ytm-lyrics](https://github.com/Andys1114/ytm-lyrics)，主分支为 `main`。提交前先检查内容：
+项目仓库为 [Andys1114/ytm-lyrics](https://github.com/Andys1114/ytm-lyrics)，主分支为 `main`。改动通过 PR 合并；先创建工作分支，提交前检查内容：
 
 ```sh
+git switch -c your-change
 git status --short
 git add .
 git diff --cached --stat
@@ -15,8 +16,10 @@ git diff --cached --name-only
 
 ```sh
 git commit -m "Describe the change"
-git push origin main
+git push -u origin HEAD
 ```
+
+在 GitHub 打开指向 `main` 的 PR，解决讨论后合并。不强制另一位审阅者批准，也不要求 CI 状态检查通过；`main` 禁止强推和删除，不设置绕过名单。
 
 维护者提交应使用已在 GitHub 登记的签名密钥和对应提交邮箱；推送后查看提交页的 Verified 状态。不要把整个工作目录拖入网页上传：忽略目录中的本机材料应留在本地。
 
@@ -24,7 +27,7 @@ git push origin main
 
 ## 检查 GitHub CI
 
-工作流在 push／pull_request 时重建渲染器，检查生成文件、Node、JUnit、Lint 和 APK 构建。它只授予 contents: read，不使用维护者签名、不自动发布 Release。GitHub 环境中的第一次运行只能在上传后确认，本地检查不等同于远端已通过。
+工作流仅手动触发：在仓库 Actions → Build and check → Run workflow 中选择分支。提交和 PR 不自动构建，合并不依赖 CI。运行时初始化 Android SDK，重建渲染器，检查生成文件、Node、JUnit、Lint 和 APK 构建。它只授予 contents: read，不使用维护者签名、不自动发布 Release。本地检查不等同于远端已通过。
 
 CI APK 使用该运行环境的调试签名，仅供构建验证；不同运行的密钥也可能不同，不保证覆盖已有安装。检查报告与 APK Artifacts 保留 14 天。
 
