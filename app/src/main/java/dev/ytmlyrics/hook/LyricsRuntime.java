@@ -145,13 +145,12 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             Thread thread=new Thread(job,"ytm-lyrics-preload");thread.setDaemon(true);thread.setPriority(Thread.MIN_PRIORITY);return thread;
         });
         preloader=new PlaylistPreloader(worker,new PlaylistPreloader.Cache(){
-            @Override public boolean contains(Song value,String policy){
+            @Override public boolean contains(Song value,PlaylistPreloader.Policy policy){
                 Candidate binding=bindings.get(value);
                 // Source enable/order is captured in the policy; do not access mutable registry state here.
-                String enabled=policy.substring(policy.indexOf('/')+1);
-                return (binding!=null && java.util.Arrays.asList(enabled.split(",")).contains(binding.sourceId())) || cache.get(value,policy)!=null;
+                return (binding!=null && policy.sourceIds().contains(binding.sourceId())) || cache.get(value,policy.cacheKey())!=null;
             }
-            @Override public void put(Song value,String policy,List<Candidate> found,boolean complete){cache.put(value,policy,found,complete);}
+            @Override public void put(Song value,PlaylistPreloader.Policy policy,List<Candidate> found,boolean complete){cache.put(value,policy.cacheKey(),found,complete);}
         },(value,enabled,cancelled)->new Resolver().resolve(value,enabled,cancelled),System::currentTimeMillis,
                 progress->main.post(()->{preloadProgress=progress;render();}),
                 (value,error)->logger.write("队列歌词预载失败",error));

@@ -30,6 +30,38 @@ public class EnhancedLyricsTest {
         assertEquals("",TimedLyrics.translate(lines,"[00:40]Wrong").get(0).translation());
         assertEquals("",lines.get(0).translation());
     }
+    @Test public void sparseTranslationDoesNotGetStolenByAnEarlierLine() {
+        var lines=TimedLyrics.yrc("[1000,400](1000,400,0)第一句\n[1600,400](1600,400,0)第二句");
+        var translated=TimedLyrics.translate(lines,"[00:01.600]Second");
+        assertEquals("",translated.get(0).translation());assertEquals("Second",translated.get(1).translation());
+        for(int i=0;i<lines.size();i++) {
+            assertEquals(lines.get(i).startMs(),translated.get(i).startMs());
+            assertEquals(lines.get(i).endMs(),translated.get(i).endMs());
+            assertEquals(lines.get(i).words(),translated.get(i).words());
+        }
+    }
+    @Test public void exactAndNearbyTranslationsCompeteOnlyForTheirNearestLine() {
+        var lines=TimedLyrics.fromLrc("[00:01]第一句\n[00:01.600]第二句\n[00:03]第三句",10000);
+        var translated=TimedLyrics.translate(lines,"[00:01.500]Near second\n[00:01.600]Exact second\n[00:02.950]Third");
+        assertEquals(List.of("","Exact second","Third"),translated.stream().map(TimedLyrics.Line::translation).toList());
+        var nearby=TimedLyrics.translate(lines,"[00:01.500]Nearest second\n[00:01.900]Farther second");
+        assertEquals(List.of("","Nearest second",""),nearby.stream().map(TimedLyrics.Line::translation).toList());
+    }
+    @Test public void translationToleranceIncludesOneSecondButNotMore() {
+        var lines=TimedLyrics.fromLrc("[00:01]第一句\n[00:04]第二句\n[00:07]第三句",10000);
+        var translated=TimedLyrics.translate(lines,"[00:00]First\n[00:05]Second\n[00:08.001]Too far");
+        assertEquals(List.of("First","Second",""),translated.stream().map(TimedLyrics.Line::translation).toList());
+    }
+    @Test public void simultaneousLinesKeepStableOneToOneTranslationsWithoutUsingFartherLines() {
+        var lines=TimedLyrics.fromLrc("[00:01]第一句\n[00:01]第二句\n[00:01.600]第三句",10000);
+        var translated=TimedLyrics.translate(lines,"[00:01]First\n[00:01]Second\n[00:01]Excess");
+        assertEquals(List.of("First","Second",""),translated.stream().map(TimedLyrics.Line::translation).toList());
+    }
+    @Test public void exactTranslationsKeepTheirOrderWhenSimultaneousLinesAlsoHaveNearbyTranslations() {
+        var lines=TimedLyrics.fromLrc("[00:01]第一句\n[00:01]第二句",10000);
+        var translated=TimedLyrics.translate(lines,"[00:00.950]Nearby\n[00:01]First exact\n[00:01]Second exact");
+        assertEquals(List.of("First exact","Second exact"),translated.stream().map(TimedLyrics.Line::translation).toList());
+    }
     @Test public void invalidWordOrderOrUnparsedTailIsReported() {
         for(String data:List.of("[1000,1000](900,400,0)bad","[1000,1000](1400,100,0)a(1200,100,0)b")) {
             try{TimedLyrics.yrc(data);fail();}catch(IllegalArgumentException expected){assertNotNull(expected.getMessage());}
@@ -66,5 +98,59 @@ public class EnhancedLyricsTest {
         var old=candidate("qqmusic","1","[00:01]自写",TimedLyrics.translate(TimedLyrics.fromLrc("[00:01]自写",10000),"[00:01]Original"));
         var fresh=candidate("qqmusic","1",null,TimedLyrics.yrc("[1000,1000](1000,400,0)自(1400,600,0)写"));
         var merged=fresh.preserveCache(old);assertTrue(merged.hasWords());assertEquals("Original",merged.timeline().get(0).translation());
+    }
+    @Test public void lineOnlyRefreshFillsNewTranslationsWithoutDiscardingCachedWordsOrBinding() {
+        var words=TimedLyrics.yrc("[1000,1000](1000,1000,0)自写\n[3000,1000](3000,1000,0)歌词");
+        var old=new Candidate("qqmusic","1","Chosen song","Chosen artist","Chosen album",10000,null,null,false,
+                TimedLyrics.translate(words,"[00:01]Cached original"),"");
+        var fresh=new Candidate("qqmusic","1","Changed title","Changed artist","Changed album",11000,null,"[00:01]自写\n[00:03]歌词",false,
+                TimedLyrics.translate(TimedLyrics.fromLrc("[00:01]自写\n[00:03]歌词",11000),"[00:01]Fresh original\n[00:03]New lyrics"),"QRC unavailable");
+        var merged=fresh.preserveCache(old);
+        assertTrue(merged.hasWords());assertEquals(List.of("Cached original","New lyrics"),merged.timeline().stream().map(TimedLyrics.Line::translation).toList());
+        assertEquals(old.sourceId(),merged.sourceId());assertEquals(old.id(),merged.id());assertEquals(old.title(),merged.title());
+        assertEquals(old.artist(),merged.artist());assertEquals(old.album(),merged.album());assertEquals(old.durationMs(),merged.durationMs());
+        assertEquals(fresh.enhancementError(),merged.enhancementError());
+        for(int i=0;i<words.size();i++) {
+            assertEquals(words.get(i).startMs(),merged.timeline().get(i).startMs());
+            assertEquals(words.get(i).endMs(),merged.timeline().get(i).endMs());
+            assertEquals(words.get(i).words(),merged.timeline().get(i).words());
+        }
+    }
+    @Test public void cachedTranslationsFillGapsInPartiallyTranslatedFreshWords() {
+        var words=TimedLyrics.yrc("[1000,1000](1000,1000,0)自写\n[3000,1000](3000,1000,0)歌词");
+        var old=candidate("qqmusic","1",null,TimedLyrics.translate(words,"[00:01]Cached original\n[00:03]Cached lyrics"));
+        var fresh=candidate("qqmusic","1",null,TimedLyrics.translate(words,"[00:03]Fresh lyrics"));
+        assertEquals(List.of("Cached original","Fresh lyrics"),fresh.preserveCache(old).timeline().stream().map(TimedLyrics.Line::translation).toList());
+    }
+    @Test public void refreshTranslationsRequireMatchingOriginalTextAndNearbyTime() {
+        var old=candidate("qqmusic","1",null,TimedLyrics.yrc("[1000,1000](1000,1000,0)自写\n[3000,1000](3000,1000,0)歌词"));
+        var fresh=candidate("qqmusic","1",null,TimedLyrics.translate(TimedLyrics.fromLrc("[00:01]不同原文\n[00:04.001]歌词",10000),
+                "[00:01]Wrong text\n[00:04.001]Wrong time"));
+        assertFalse(fresh.preserveCache(old).hasTranslation());
+        try{candidate("qqmusic","other",null,List.of()).preserveCache(old);fail();}
+        catch(IllegalArgumentException expected){assertNotNull(expected.getMessage());}
+    }
+    @Test public void refreshDoesNotReuseTranslationForRepeatedOriginalText() {
+        var old=candidate("qqmusic","1",null,TimedLyrics.yrc("[1000,400](1000,400,0)重复\n[1600,400](1600,400,0)重复"));
+        var fresh=candidate("qqmusic","1",null,TimedLyrics.translate(TimedLyrics.fromLrc("[00:01.600]重复",10000),"[00:01.600]Second"));
+        assertEquals(List.of("","Second"),fresh.preserveCache(old).timeline().stream().map(TimedLyrics.Line::translation).toList());
+    }
+    @Test public void refreshFillsSimultaneousRepeatedLinesWithoutOverwritingExistingTranslation() {
+        var words=TimedLyrics.yrc("[1000,400](1000,400,0)重复\n[1000,400](1000,400,0)重复");
+        var old=candidate("qqmusic","1",null,TimedLyrics.translate(words,"[00:01]Cached first"));
+        var supplement=List.of(new TimedLyrics.Line(1000,1000,"重复","Fresh first",List.of()),
+                new TimedLyrics.Line(1000,10000,"重复","Fresh second",List.of()));
+        var fresh=candidate("qqmusic","1",null,supplement);
+        var merged=fresh.preserveCache(old);
+        assertEquals(List.of("Cached first","Fresh second"),merged.timeline().stream().map(TimedLyrics.Line::translation).toList());
+        assertEquals(words.get(0).words(),merged.timeline().get(0).words());assertEquals(words.get(1).words(),merged.timeline().get(1).words());
+    }
+    @Test public void blankSupplementLinesKeepTheirPlaceAmongSimultaneousRepeatedOriginals() {
+        var words=TimedLyrics.yrc("[1000,400](1000,400,0)重复\n[1000,400](1000,400,0)重复");
+        var old=candidate("qqmusic","1",null,TimedLyrics.translate(words,"[00:01]Cached first"));
+        var supplement=List.of(new TimedLyrics.Line(1000,1000,"重复","",List.of()),
+                new TimedLyrics.Line(1000,10000,"重复","Fresh second",List.of()));
+        var fresh=candidate("qqmusic","1",null,supplement);
+        assertEquals(List.of("Cached first","Fresh second"),fresh.preserveCache(old).timeline().stream().map(TimedLyrics.Line::translation).toList());
     }
 }

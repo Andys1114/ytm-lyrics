@@ -1,6 +1,7 @@
 package dev.ytmlyrics.core;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -71,20 +72,54 @@ public final class TimedLyrics {
         return List.copyOf(result);
     }
 
-    /** Provider translations must have a nearby timestamp; never attach by array index. */
+    private record Translation(long timeMs, String text, String original) {}
+    private record TranslationMatch(int translation, long startMs, long distance) {}
+    /** Provider translations belong to their nearest line, not the first line within tolerance. */
     public static List<Line> translate(List<Line> lines, String lrc) {
-        List<Lrc.Line> translations = Lrc.parse(lrc);
+        var translations = Lrc.parse(lrc).stream().map(line -> new Translation(line.timeMs(),line.text(),null)).toList();
+        return translated(lines,translations,false);
+    }
+    /** Same-recording enrichment may fill gaps only when the original text also matches. */
+    static List<Line> fillTranslations(List<Line> lines, List<Line> supplement) {
+        var translations = supplement.stream().map(line -> new Translation(line.startMs,line.translation,line.text)).toList();
+        return translated(lines,translations,true);
+    }
+    private static List<Line> translated(List<Line> lines, List<Translation> translations, boolean keepExisting) {
         if (translations.isEmpty()) return lines;
-        boolean[] used = new boolean[translations.size()];
-        List<Line> result = new ArrayList<>();
-        for (Line line : lines) {
+        int[] matches = new int[lines.size()];
+        Arrays.fill(matches,-1);
+        List<TranslationMatch> pending = new ArrayList<>();
+        for (int i = 0; i < translations.size(); i++) {
+            Translation translation = translations.get(i);
+            // A supplement's untranslated original still reserves its place among simultaneous repeats.
+            if (translation.text.isBlank() && translation.original == null) continue;
             int nearest = -1; long distance = 1001;
-            for (int i = 0; i < translations.size(); i++) {
-                long delta = Math.abs(translations.get(i).timeMs() - line.startMs);
-                if (!used[i] && delta < distance && !translations.get(i).text().isBlank()) { nearest = i; distance = delta; }
+            for (int j = 0; j < lines.size(); j++) {
+                Line line = lines.get(j);
+                if (translation.original != null && !translation.original.equals(line.text)) continue;
+                long delta = Math.abs(translation.timeMs-line.startMs);
+                if (delta < distance) { nearest = j; distance = delta; }
             }
+            if (nearest >= 0) pending.add(new TranslationMatch(i,lines.get(nearest).startMs,distance));
+        }
+        // Exact/closer matches win; equal-distance translations retain their source order.
+        pending.sort(Comparator.comparingLong(TranslationMatch::distance));
+        for (TranslationMatch match : pending) {
+            Translation translation = translations.get(match.translation);
+            for (int j = 0; j < lines.size(); j++) {
+                Line line = lines.get(j);
+                // Equal-time siblings may share the nearest slot, never a farther timestamp.
+                if (matches[j] < 0 && line.startMs == match.startMs
+                        && (translation.original == null || translation.original.equals(line.text))) {
+                    matches[j] = match.translation; break;
+                }
+            }
+        }
+        List<Line> result = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
             String translated = line.translation;
-            if (nearest >= 0) { used[nearest] = true; translated = translations.get(nearest).text(); }
+            if (matches[i] >= 0 && (!keepExisting || translated.isBlank())) translated = translations.get(matches[i]).text;
             result.add(new Line(line.startMs, line.endMs, line.text, translated, line.words));
         }
         return List.copyOf(result);
