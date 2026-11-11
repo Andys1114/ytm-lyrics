@@ -4,6 +4,7 @@ import dev.ytmlyrics.core.Candidate;
 import dev.ytmlyrics.core.Lrc;
 import dev.ytmlyrics.core.TimedLyrics;
 import dev.ytmlyrics.core.LyricsSource;
+import dev.ytmlyrics.core.SearchQuery;
 import dev.ytmlyrics.core.Song;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -36,7 +37,7 @@ public final class QqMusicSource implements LyricsSource {
     @Override public boolean supportsEnhancement() { return true; }
 
     @Override public List<Candidate> search(Song song, String query) throws Exception {
-        String keyword = query.isBlank() ? (song.title() + " " + song.artist()).strip() : query;
+        String keyword = SearchQuery.of(song,query).keywords();
         JSONObject result = object(transport.request(SEARCH + "?w=" + URLEncoder.encode(keyword, StandardCharsets.UTF_8)
                 + "&format=json&p=1&n=" + MAX_SONGS + "&cr=1&aggr=1", null));
         requireCode(result, "搜索");
@@ -92,52 +93,61 @@ public final class QqMusicSource implements LyricsSource {
         return fetch(cached).preserveCache(cached);
     }
     private Candidate fetch(Candidate metadata) throws IOException {
-        String lrc = null, translated = null; String warning = "";
-        IOException failure = null;
+        String lrc = null, translated = null;
+        List<IOException> failures = new ArrayList<>();
         try {
             JSONObject response = object(transport.request(LYRIC + "?musicid=" + metadata.id() + "&g_tk=5381&format=json", null));
             requireCode(response,"歌词");
             if (response.optInt("retcode",-1) != 0) throw new IOException("歌词接口 retcode=" + response.optInt("retcode",-1));
             lrc = base64(response.optString("lyric",""));
             translated = base64(response.optString("trans",""));
-        } catch (IOException error) { failure = error; warning = error.getMessage(); }
+        } catch (IOException error) { failures.add(error); }
         List<TimedLyrics.Line> lines = TimedLyrics.fromLrc(lrc,metadata.durationMs());
+        String qrc = null;
         try {
             String response = transport.request("https://c.y.qq.com/qqmusic/fcgi-bin/lyric_download.fcg",
                     "version=15&miniversion=82&lrctype=4&musicid=" + metadata.id());
             var result = Pattern.compile("<result>(-?\\d+)</result>").matcher(response);
             if (!result.find() || !result.group(1).equals("0")) throw new IOException("QRC 接口响应无效或拒绝请求");
-            String original = encrypted(response,"content");
-            if (original != null) {
+            qrc = response;
+        } catch (IOException error) {
+            failures.add(new IOException("逐字请求失败：" + error.getMessage(), error));
+        }
+        if (qrc != null) {
+            String original = qrcField(qrc,"content");
+            if (original != null) try {
                 var words = TimedLyrics.qrc(lyricContent(QrcCrypto.decrypt(original)));
                 if (!words.isEmpty()) lines = words;
+            } catch (IOException | IllegalArgumentException | ArithmeticException error) {
+                failures.add(new IOException("逐字原文处理失败：" + error.getMessage(), error));
             }
-            String trans = encrypted(response,"contentts");
-            if (trans != null) {
-                String decoded = lyricContent(QrcCrypto.decrypt(trans));
-                if (!Lrc.parse(decoded).isEmpty()) translated = decoded;
-            }
-        } catch (IOException | IllegalArgumentException | ArithmeticException error) {
-            warning = (warning.isBlank() ? "" : warning + "；") + "逐字请求失败：" + error.getMessage();
-            if (failure == null) failure = new IOException(warning,error);
         }
         lines = TimedLyrics.translate(lines,translated);
+        if (qrc != null) {
+            String trans = qrcField(qrc,"contentts");
+            if (trans != null) try {
+                // QQ sends both clear LRC and encrypted LRC here, even when the original is QRC.
+                String decoded = !Lrc.parse(trans).isEmpty() ? trans : lyricContent(QrcCrypto.decrypt(trans));
+                lines = TimedLyrics.translate(lines,decoded);
+            } catch (IOException error) {
+                failures.add(new IOException("译文处理失败：" + error.getMessage(), error));
+            }
+        }
         boolean sync = !Lrc.parse(lrc).isEmpty();
+        String warning = String.join("；", failures.stream().map(Throwable::getMessage).toList());
         Candidate candidate = new Candidate(id(),metadata.id(),metadata.title(),metadata.artist(),metadata.album(),metadata.durationMs(),
                 sync ? null : lrc,sync ? lrc : null,false,lines,warning);
-        if (!candidate.hasLyrics() && failure != null) throw failure;
+        if (!candidate.hasLyrics() && !failures.isEmpty()) throw failures.get(0);
         return candidate;
     }
     private static String base64(String value) throws IOException {
         try { return new String(Base64.getDecoder().decode(value),StandardCharsets.UTF_8); }
         catch (IllegalArgumentException error) { throw new IOException("歌词 Base64 数据无效",error); }
     }
-    static String encrypted(String xml,String tag) {
-        var matcher = Pattern.compile("<" + tag + "\\b[^>]*><!\\[CDATA\\[(.*?)]]>",Pattern.DOTALL).matcher(xml);
+    private static String qrcField(String xml,String tag) {
+        var matcher = Pattern.compile("<" + tag + "\\b[^>]*>\\s*<!\\[CDATA\\[(.*?)]]>",Pattern.DOTALL).matcher(xml);
         if(!matcher.find() || matcher.group(1).isBlank())return null;
-        String hex=matcher.group(1).strip();
-        if(!hex.matches("[0-9A-Fa-f]+"))throw new IllegalArgumentException("QRC 加密编码无效");
-        return hex;
+        return matcher.group(1).strip();
     }
     static String lyricContent(String text) {
         var matcher = Pattern.compile("LyricContent=\"([^\"]*)\"",Pattern.DOTALL).matcher(text);

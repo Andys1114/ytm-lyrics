@@ -24,8 +24,20 @@ public class PlaylistPreloaderTest {
     }
     private static final class Cache implements PlaylistPreloader.Cache {
         final HashMap<String,List<Candidate>> values=new HashMap<>();
-        public boolean contains(Song song,String policy){return values.containsKey(song.key()+policy);}
-        public void put(Song song,String policy,List<Candidate> found,boolean complete){values.put(song.key()+policy,found);}
+        public boolean contains(Song song,PlaylistPreloader.Policy policy){return values.containsKey(song.key()+policy.cacheKey());}
+        public void put(Song song,PlaylistPreloader.Policy policy,List<Candidate> found,boolean complete){values.put(song.key()+policy.cacheKey(),found);}
+    }
+    @Test public void sourcePolicyVersionsAutomaticSearchAndKeepsAnImmutableOrderedSnapshot() {
+        var ids=new ArrayList<>(List.of("qqmusic","netease"));
+        var policy=new PlaylistPreloader.Policy(ids);ids.clear();
+        assertEquals(List.of("qqmusic","netease"),policy.sourceIds());
+        assertEquals("automatic-v3/qqmusic,netease",policy.cacheKey());
+        assertEquals(PlaylistPreloader.policy(SOURCES),policy.cacheKey());
+        assertEquals(policy,PlaylistPreloader.Policy.fromSources(SOURCES));
+        assertNotEquals(policy,PlaylistPreloader.Policy.fromSources(List.of(source("netease"),source("qqmusic"))));
+        assertFalse(PlaylistPreloader.Policy.fromSources(List.of(source("netease"))).sourceIds().contains("qqmusic"));
+        assertEquals("automatic-v3/",PlaylistPreloader.policy(List.of()));
+        try{policy.sourceIds().add("lrclib");fail();}catch(UnsupportedOperationException expected){}
     }
     @Test public void preloadsOnlyThreeSeriallyAndRepeatedPublicationDoesNotRefetch() {
         var executor=new ManualExecutor();var cache=new Cache();var calls=new ArrayList<Song>();var progress=new ArrayList<PlaylistPreloader.Progress>();
@@ -43,8 +55,8 @@ public class PlaylistPreloaderTest {
         },()->1000,p->{},(s,e)->fail());
         owner[0].update(List.of(song("old"),song("removed")),SOURCES,false);executor.run();
         assertEquals(List.of(song("old"),song("new")),calls);
-        assertFalse(cache.contains(song("old"),PlaylistPreloader.policy(SOURCES)));
-        assertTrue(cache.contains(song("new"),PlaylistPreloader.policy(SOURCES)));
+        assertFalse(cache.contains(song("old"),PlaylistPreloader.Policy.fromSources(SOURCES)));
+        assertTrue(cache.contains(song("new"),PlaylistPreloader.Policy.fromSources(SOURCES)));
     }
     @Test public void foregroundQueryPausesBackgroundAndInvalidatesItsResult() {
         var executor=new ManualExecutor();var cache=new Cache();var calls=new ArrayList<Song>();var owner=new PlaylistPreloader[1];
@@ -67,18 +79,18 @@ public class PlaylistPreloaderTest {
         },()->1000,p->{},(s,e)->fail());
         owner[0].update(List.of(song("1")),SOURCES,false);executor.run();
         assertEquals(List.of(PlaylistPreloader.policy(SOURCES),PlaylistPreloader.policy(changed)),policies);
-        assertFalse(cache.contains(song("1"),PlaylistPreloader.policy(SOURCES)));
+        assertFalse(cache.contains(song("1"),PlaylistPreloader.Policy.fromSources(SOURCES)));
         owner[0].update(List.of(),changed,false);executor.run();assertEquals(2,policies.size());
     }
     @Test public void failedRequestsHaveCooldownAndDoNotEraseOtherCachedSongs() {
         var executor=new ManualExecutor();var cache=new Cache();long[] now={1000};int[] calls={0};
-        cache.put(song("cached"),PlaylistPreloader.policy(SOURCES),result(song("cached")).candidates(),true);
+        cache.put(song("cached"),PlaylistPreloader.Policy.fromSources(SOURCES),result(song("cached")).candidates(),true);
         var loader=new PlaylistPreloader(executor,cache,(song,sources,cancelled)->{calls[0]++;throw new java.io.IOException("503");},()->now[0],p->{},(s,e)->{});
         var plan=List.of(song("bad"),song("cached"));
         loader.update(plan,SOURCES,false);executor.run();
         loader.update(List.of(),SOURCES,false);loader.update(plan,SOURCES,false);executor.run();assertEquals(1,calls[0]);
         now[0]+=300001;loader.update(List.of(),SOURCES,false);loader.update(plan,SOURCES,false);executor.run();assertEquals(2,calls[0]);
-        assertTrue(cache.contains(song("cached"),PlaylistPreloader.policy(SOURCES)));
+        assertTrue(cache.contains(song("cached"),PlaylistPreloader.Policy.fromSources(SOURCES)));
     }
     @Test public void followsPublishedShuffleOrderAndSkipsDuplicateCurrentOrIncompleteEntries() {
         var current=song("current");

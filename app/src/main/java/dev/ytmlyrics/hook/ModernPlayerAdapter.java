@@ -3,9 +3,9 @@ package dev.ytmlyrics.hook;
 import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.TextView;
 import io.github.libxposed.api.XposedModule;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.WeakHashMap;
@@ -14,6 +14,7 @@ import java.util.WeakHashMap;
 @android.annotation.SuppressLint("ResourceType") // Resource IDs belong to the fixed host APK, not this module.
 final class ModernPlayerAdapter {
     private static final String LOADING = "com.google.android.libraries.youtube.rendering.ui.widget.loadingframe.LoadingFrameLayout";
+    private static final int VIDEO_ACTION_BAR = 0x7f0b0e3d;
     private final XposedModule api;
     private final LyricsRuntime runtime;
     private final LyricsRuntime.Logger logger;
@@ -25,8 +26,6 @@ final class ModernPlayerAdapter {
     private Class<?> transitionClass;
     private long pendingLyricsClick;
     private Boolean supportedVersion;
-    private record TitleState(CharSequence description,int minimumHeight,boolean clickable,boolean focusable,int accessibility) {}
-    private final WeakHashMap<TextView,TitleState> titles=new WeakHashMap<>();
 
     ModernPlayerAdapter(XposedModule api, LyricsRuntime runtime, LyricsRuntime.Logger logger) {
         this.api = api; this.runtime = runtime; this.logger = logger;
@@ -48,31 +47,27 @@ final class ModernPlayerAdapter {
         Class<?> header=factory.type("vly");
         api.hook(header.getDeclaredMethod("c",Context.class)).intercept(chain->{
             Object previous=HostPanelFactory.get(chain.getThisObject(),"F");
-            if(previous instanceof View view)runtime.lyricsHeader(view,false);
+            if(previous instanceof View view)runtime.unbindLyricsHeader(view);
             Object result=chain.proceed();
             String id=(String)HostPanelFactory.get(chain.getThisObject(),"O");
-            Object title=HostPanelFactory.get(chain.getThisObject(),"J");
-            if(title instanceof TextView text && titles.containsKey(text) && !LyricsAction.panel(id)) {
-                TitleState old=titles.remove(text);text.setOnClickListener(null);
-                text.setContentDescription(old.description());text.setMinimumHeight(old.minimumHeight());
-                text.setClickable(old.clickable());text.setFocusable(old.focusable());
-                text.setImportantForAccessibility(old.accessibility());
-            }
             if(LyricsAction.panel(id) && result instanceof View view && supported(view.getContext())) {
-                runtime.lyricsHeader(view,true);
-                // Use the existing title, rather than adding children to the native header's
-                // counted action strip. Native close/back controls and action indices stay intact.
-                if(title instanceof TextView text && (titles.containsKey(text) || !text.hasOnClickListeners())) {
-                    titles.putIfAbsent(text,new TitleState(text.getContentDescription(),text.getMinimumHeight(),text.isClickable(),text.isFocusable(),text.getImportantForAccessibility()));
-                    String caption=text.getText().toString();
-                    if(!caption.endsWith("  ⋯"))text.setText(android.text.TextUtils.concat(text.getText(),"  ⋯"));
-                    text.setContentDescription("歌词设置");text.setClickable(true);text.setFocusable(true);
-                    text.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-                    text.setMinimumHeight(Math.round(48*text.getResources().getDisplayMetrics().density));
-                    text.setOnClickListener(v->runtime.settings(v.getContext()));
-                }
+                Object title=HostPanelFactory.get(chain.getThisObject(),"J");
+                if(!runtime.bindLyricsHeader(view,title instanceof android.widget.TextView text?text:null,
+                        view.getResources().getText(0x7f1404b7)))logger.write("原生标题槽未匹配，使用正文内快捷行",null);
             }
             return result;
+        });
+        // The host may replace the rounded shell's background after the header is bound.
+        api.hook(controllerClass.getDeclaredMethod("C",android.graphics.drawable.GradientDrawable.class,int.class))
+                .intercept(chain->{Object result=chain.proceed();runtime.tintHeaders();return result;});
+        api.hook(controllerClass.getDeclaredMethod("F",factory.type("vko")))
+                .intercept(chain->{Object result=chain.proceed();runtime.tintHeaders();return result;});
+        api.hook(factory.type("vmc").getDeclaredMethod("g",Context.class,boolean.class,boolean.class,boolean.class,
+                boolean.class,View.class,View.class,factory.type("vui"),boolean.class)).intercept(chain->{
+            boolean first=chain.getArg(5) instanceof View view && runtime.restoreHeaderBackground(view);
+            boolean second=chain.getArg(6) instanceof View view && runtime.restoreHeaderBackground(view);
+            try { return chain.proceed(); }
+            finally { if(first || second)runtime.tintHeaders(); }
         });
         api.hook(panel.getDeclaredMethod("c")).intercept(chain -> {
             Object result = chain.proceed();
@@ -84,13 +79,6 @@ final class ModernPlayerAdapter {
                 // content return value; the original root remains owned by the native model.
                 if (HostPanelFactory.ID.equals(id)) customPanels.put(loading, true);
                 var replacement=runtime.attach(loading);
-                if(replacement!=null) {
-                    Object nativeHeader=HostPanelFactory.call(chain.getThisObject(),"T");
-                    boolean merged=nativeHeader!=null && header.isInstance(nativeHeader)
-                            && HostPanelFactory.get(nativeHeader,"J") instanceof TextView title
-                            && titles.containsKey(title);
-                    replacement.headerMenuAttached(merged);
-                }
                 if (HostPanelFactory.ID.equals(id)) HostPanelFactory.call(chain.getThisObject(), "W");
                 if(replacement!=null)return replacement;
             }
@@ -159,7 +147,46 @@ final class ModernPlayerAdapter {
             }
             return chain.proceed();
         });
+        try { installLyricsActionOrder(); }
+        catch (ReflectiveOperationException | RuntimeException error) {
+            logger.write("无法调整歌词按钮顺序，保留播放器原始排列", error);
+        }
         logger.write("9.41.52 modern player hooks installed", null);
+    }
+    private void installLyricsActionOrder() throws ReflectiveOperationException {
+        // jma.b renders both client-generated and server-provided player action bars.
+        // Only replace the Elements bytes of this bar; do not reorder mounted RecyclerView children.
+        Class<?> presenter = factory.type("jma");
+        Class<?> renderer = factory.type("akmt");
+        Class<?> extension = factory.type("aich");
+        Class<?> byteString = factory.type("aibu");
+        Field bar = presenter.getDeclaredField("a");
+        bar.setAccessible(true);
+        Object elements = factory.type("armg").getField("a").get(null);
+        Method read = renderer.getMethod("b", extension);
+        Method bytes = byteString.getMethod("G");
+        Method wrap = byteString.getMethod("J", byte[].class);
+        Method toBuilder = factory.type("aicy").getMethod("toBuilder");
+        Method write = factory.type("aics").getMethod("e", extension, Object.class);
+        api.hook(presenter.getDeclaredMethod("b", renderer, boolean.class)).intercept(chain -> {
+            Object original = chain.getArg(0);
+            Object replacement = original;
+            try {
+                if (bar.get(chain.getThisObject()) instanceof View view && view.getId() == VIDEO_ACTION_BAR
+                        && supported(view.getContext())) {
+                    byte[] before = (byte[]) bytes.invoke(read.invoke(original, elements));
+                    byte[] after = LyricsActionOrder.moveFallback(before, view.getResources().getString(0x7f1404b7));
+                    if (before != after) {
+                        Object builder = toBuilder.invoke(original);
+                        write.invoke(builder, elements, wrap.invoke(null, after));
+                        replacement = HostPanelFactory.call(builder, "build");
+                    }
+                }
+            } catch (ReflectiveOperationException | RuntimeException error) {
+                logger.write("歌词按钮重排失败，保留播放器原始排列", error);
+            }
+            return replacement == original ? chain.proceed() : chain.proceed(new Object[]{replacement, chain.getArg(1)});
+        });
     }
     private boolean openCustom(Context current) throws ReflectiveOperationException {
         if (!supported(current)) return false;

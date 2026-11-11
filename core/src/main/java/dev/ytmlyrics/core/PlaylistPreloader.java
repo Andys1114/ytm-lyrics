@@ -11,14 +11,21 @@ import java.util.function.LongSupplier;
 /** One bounded worker; queue/source changes invalidate in-flight results without touching playback. */
 public final class PlaylistPreloader {
     public interface Cache {
-        boolean contains(Song song,String policy);
-        void put(Song song,String policy,List<Candidate> candidates,boolean complete);
+        boolean contains(Song song,Policy policy);
+        void put(Song song,Policy policy,List<Candidate> candidates,boolean complete);
     }
     public interface Loader {
         Resolver.Result load(Song song,List<LyricsSource> sources,BooleanSupplier cancelled) throws Exception;
     }
     public record Progress(int cached,int total,boolean working) {}
-    private record Key(Song song,String policy) {}
+    public record Policy(List<String> sourceIds) {
+        public Policy { sourceIds=List.copyOf(sourceIds); }
+        public static Policy fromSources(List<LyricsSource> sources) {
+            return new Policy(sources.stream().map(LyricsSource::id).toList());
+        }
+        public String cacheKey() { return "automatic-v3/"+String.join(",",sourceIds); }
+    }
+    private record Key(Song song,Policy policy) {}
     private static final long RETRY_MS=5*60*1000;
     private final Executor executor;
     private final Cache cache;
@@ -29,7 +36,7 @@ public final class PlaylistPreloader {
     private final LinkedHashMap<Key,Long> attempted=new LinkedHashMap<>();
     private List<Song> songs=List.of();
     private List<LyricsSource> sources=List.of();
-    private String policy="";
+    private Policy policy=new Policy(List.of());
     private long revision;
     private boolean paused,running;
 
@@ -38,11 +45,11 @@ public final class PlaylistPreloader {
         this.executor=executor;this.cache=cache;this.loader=loader;this.clock=clock;this.listener=listener;this.failure=failure;
     }
     public static String policy(List<LyricsSource> sources) {
-        return "automatic-v2/"+String.join(",",sources.stream().map(LyricsSource::id).toList());
+        return Policy.fromSources(sources).cacheKey();
     }
     public synchronized void update(List<Song> next,List<LyricsSource> enabled,boolean foregroundBusy) {
         var limited=next.stream().distinct().limit(3).toList();
-        String nextPolicy=policy(enabled);
+        Policy nextPolicy=Policy.fromSources(enabled);
         if(songs.equals(limited) && policy.equals(nextPolicy) && paused==foregroundBusy)return;
         revision++;
         songs=List.copyOf(limited);sources=List.copyOf(enabled);policy=nextPolicy;paused=foregroundBusy;
@@ -57,7 +64,7 @@ public final class PlaylistPreloader {
     }
     private void drain() {
         while(true) {
-            Song target=null;List<LyricsSource> providers;String signature;long token;
+            Song target=null;List<LyricsSource> providers;Policy signature;long token;
             synchronized(this) {
                 providers=sources;signature=policy;token=revision;
                 if(!paused && !providers.isEmpty())for(Song song:songs) {

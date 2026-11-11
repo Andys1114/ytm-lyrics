@@ -78,6 +78,8 @@ public final class LyricsModule extends XposedModule {
             report("9.41.52 hooks installed (media session / lyrics tab / loading state)", null);
             new ModernPlayerAdapter(this, runtime, this::report).install(param.getClassLoader());
         } catch (ReflectiveOperationException | RuntimeException error) { report("模块初始化失败", error); }
+        try { new PlaybackTypeAdapter(this,this::report).install(param.getClassLoader()); }
+        catch(ReflectiveOperationException|RuntimeException error){report("播放类型接缝不可用，保留原有查询语义",error);}
         try { new QueueAdapter(this,runtime,this::report).install(param.getClassLoader()); }
         catch(ReflectiveOperationException|RuntimeException error){report("预载队列接缝不可用，保留当前歌曲查询",error);}
     }

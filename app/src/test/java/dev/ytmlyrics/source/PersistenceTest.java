@@ -8,9 +8,13 @@ import java.util.List;
 import static org.junit.Assert.*;
 
 public class PersistenceTest {
-    @Test public void upgradeAppendsQqWithoutChangingOldDisabledSourceOrBinding() {
+    @Test public void defaultOrderStartsWithNeteaseAndQq() {
+        var registry = new SourceRegistry(new MemoryPreferences());
+        assertEquals(List.of("netease", "qqmusic", "lrclib"), registry.enabled().stream().map(LyricsSource::id).toList());
+    }
+    @Test public void savedOrderDisabledSourceAndBindingSurviveDefaultChange() {
         var preferences = new MemoryPreferences();
-        preferences.edit().putString("source-order", "lrclib").putBoolean("enabled:lrclib", false).apply();
+        preferences.edit().putString("source-order", "lrclib,qqmusic").putBoolean("enabled:lrclib", false).apply();
         var song = new Song("video", "Song", "Artist", "", 180000);
         var lyric = new Candidate("lrclib", "1", "Song", "Artist", "", 180000, "自写测试", null, false);
         new BindingStore(preferences).put(song, lyric);

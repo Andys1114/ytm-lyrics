@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node lyrics-preview.test.cjs && node host-clock.test.mjs && node album-background.test.mjs"
+    "test": "node lyrics-preview.test.cjs && node host-clock.test.mjs && node album-background.test.mjs && node settings.test.mjs"
   },
   "dependencies": {
     "@applemusic-like-lyrics/core": "https://registry.npmjs.org/@applemusic-like-lyrics/core/-/core-0.6.0.tgz",
@@ -15,7 +15,8 @@
     "@pixi/filter-blur": "7.4.3",
     "@pixi/filter-bulge-pinch": "5.1.1",
     "@pixi/filter-color-matrix": "7.4.3",
-    "@pixi/sprite": "7.4.3"
+    "@pixi/sprite": "7.4.3",
+    "mdui": "2.1.5"
   },
   "devDependencies": {
     "esbuild": "0.28.2"

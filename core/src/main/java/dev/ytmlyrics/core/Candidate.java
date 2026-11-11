@@ -4,10 +4,16 @@ import java.util.List;
 
 public record Candidate(String sourceId, String id, String title, String artist, String album,
                         long durationMs, String plain, String synced, boolean instrumental,
-                        List<TimedLyrics.Line> enhanced, String enhancementError) {
+                        List<TimedLyrics.Line> enhanced, String enhancementError, String translationSourceId) {
     public Candidate {
         enhanced = enhanced == null ? List.of() : List.copyOf(enhanced);
         enhancementError = enhancementError == null ? "" : enhancementError;
+        translationSourceId = translationSourceId == null ? "" : translationSourceId;
+    }
+    public Candidate(String sourceId, String id, String title, String artist, String album,
+                     long durationMs, String plain, String synced, boolean instrumental,
+                     List<TimedLyrics.Line> enhanced, String enhancementError) {
+        this(sourceId,id,title,artist,album,durationMs,plain,synced,instrumental,enhanced,enhancementError,"");
     }
     public Candidate(String sourceId, String id, String title, String artist, String album,
                      long durationMs, String plain, String synced, boolean instrumental) {
@@ -25,12 +31,8 @@ public record Candidate(String sourceId, String id, String title, String artist,
     public Candidate preserveCache(Candidate cached) {
         if (!sourceId.equals(cached.sourceId) || !id.equals(cached.id)) throw new IllegalArgumentException("不能替换绑定来源或歌曲 ID");
         Candidate data = quality() < cached.quality() || (quality() == cached.quality() && !hasTranslation() && cached.hasTranslation()) ? cached : this;
-        List<TimedLyrics.Line> retained = data.enhanced.stream().map(line -> {
-            if (!line.translation().isBlank()) return line;
-            var previous = cached.timeline().stream().filter(old -> old.text().equals(line.text())
-                    && Math.abs(old.startMs()-line.startMs())<=1000 && !old.translation().isBlank()).findFirst();
-            return previous.map(old -> new TimedLyrics.Line(line.startMs(),line.endMs(),line.text(),old.translation(),line.words())).orElse(line);
-        }).toList();
+        Candidate supplement = data == cached ? this : cached;
+        List<TimedLyrics.Line> retained = TimedLyrics.fillTranslations(data.enhanced,supplement.timeline());
         return new Candidate(cached.sourceId, cached.id, cached.title, cached.artist, cached.album, cached.durationMs,
                 data.plain, data.synced, data.instrumental, retained, enhancementError);
     }

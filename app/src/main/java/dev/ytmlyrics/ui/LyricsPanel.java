@@ -7,7 +7,6 @@ import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -23,6 +22,10 @@ import java.util.List;
 public final class LyricsPanel extends FrameLayout {
     public interface Actions {
         void settings(Context context);
+        void sync(View anchor);
+        void revealSync(View anchor);
+        void collapseSync();
+        void adjustOffset(String songKey,int value,boolean relative);
         int offsetMs();
         void choose(Context context);
         void sources(Context context);
@@ -39,6 +42,7 @@ public final class LyricsPanel extends FrameLayout {
     private final Actions actions;
     private final AmlLyricsView renderer;
     private final LinearLayout menuRow;
+    private final LyricsQuickActions quickActions;
     private long serial;
     private String message = "";
     private final List<TextView> rows = new ArrayList<>();
@@ -49,6 +53,7 @@ public final class LyricsPanel extends FrameLayout {
     private Candidate selected;
     private int active = -1;
     private long lastTouch;
+    private int edgeColor=ArtworkFrame.DEFAULT_COLOR;
 
     public LyricsPanel(Context context, Actions actions) { this(context,actions,null); }
     public LyricsPanel(Context context, Actions actions, String moduleApk) {
@@ -59,14 +64,14 @@ public final class LyricsPanel extends FrameLayout {
         column.setOrientation(LinearLayout.VERTICAL);
         addView(column, new LayoutParams(-1, -1));
         menuRow = new LinearLayout(context);
-        menuRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        menuRow.setPadding(dp(12), 0, dp(12), 0);
-        Button menu = new Button(context);
-        menu.setText("歌词设置"); menu.setTextSize(15); menu.setAllCaps(false);
-        menu.setTextColor(Color.WHITE); menu.setBackgroundColor(Color.TRANSPARENT);
-        menu.setContentDescription("歌词设置");
-        menu.setOnClickListener(v -> actions.settings(context));
-        menuRow.addView(menu,new LinearLayout.LayoutParams(-2,dp(48)));
+        menuRow.setGravity(Gravity.CENTER_VERTICAL);
+        menuRow.setPadding(dp(16), dp(4), dp(8), dp(4));
+        TextView title=text("歌词",20);title.setTypeface(null,Typeface.BOLD);
+        var titleParams=new LinearLayout.LayoutParams(-2,dp(48));
+        titleParams.setMarginEnd(dp(8));
+        menuRow.addView(title,titleParams);
+        quickActions=new LyricsQuickActions(context,actions);
+        menuRow.addView(quickActions,new LinearLayout.LayoutParams(0,dp(48),1));
         column.addView(menuRow,new LinearLayout.LayoutParams(-1,-2));
         status = text("播放歌曲后查询歌词", 14);
         status.setTextColor(Color.LTGRAY);
@@ -104,6 +109,7 @@ public final class LyricsPanel extends FrameLayout {
     }
     public void display(Candidate candidate, String message) {
         this.message=message;
+        menuRow.setBackgroundColor(candidate!=null && candidate.hasSynced()?edgeColor:INK);
         if (selected != candidate) {
             selected = candidate;
             serial++;
@@ -115,6 +121,11 @@ public final class LyricsPanel extends FrameLayout {
     }
     /** Called once before the host receives this replacement view. */
     public void nativeContent(View view) { nativeContent=view; updateBody(); }
+    public void headerMenuAttached(boolean attached) { menuRow.setVisibility(attached?GONE:VISIBLE); }
+    public void syncExpansion(View anchor,String songKey,int offsetMs) {
+        quickActions.syncState(anchor,songKey,offsetMs);
+    }
+    public View syncAnchor(){return quickActions.syncAnchor();}
     private void buildFallback() {
         Candidate candidate=selected;
         active = -1;
@@ -144,11 +155,11 @@ public final class LyricsPanel extends FrameLayout {
             }
         }
     }
-    public void headerMenuAttached(boolean attached) { menuRow.setVisibility(attached ? GONE:VISIBLE); }
     public void artwork(ArtworkFrame value) {
+        edgeColor=value.color();
         if(renderer!=null)renderer.artwork(value);
-        // The old-tab settings row uses the same edge color as the WebView.
-        menuRow.setBackgroundColor(value.color());
+        // Old-tab fallback header uses the same edge color as the WebView.
+        menuRow.setBackgroundColor(selected!=null && selected.hasSynced()?edgeColor:INK);
     }
     public void restartRenderer() { if(renderer!=null)renderer.retry(); }
     public String rendererStatus() {
@@ -205,7 +216,7 @@ public final class LyricsPanel extends FrameLayout {
     @Override protected void onVisibilityChanged(View changedView,int visibility) {
         super.onVisibilityChanged(changedView,visibility);
         if(renderer!=null)renderer.active(isShown() && getWindowVisibility()==VISIBLE && selected!=null && selected.hasSynced());
-        if(actions!=null && isShown())post(actions::visible);
+        if(actions!=null && isAttachedToWindow())post(actions::visible);
     }
     private TextView text(String value, float size) {
         TextView view = new TextView(getContext());

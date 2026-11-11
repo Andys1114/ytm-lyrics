@@ -14,8 +14,13 @@ import static org.junit.Assert.*;
 public class EnhancedSourcesTest {
     // Encrypted, zlib-compressed self-written fixture; no third-party lyric content.
     static final String QRC="ee7befb746f93831d42dcdf2e21f0d5d924943e250c9b32f6d731ce7c8a4cd014e64c40abdc08c734961f693c8f695ef5ccf4d46d7ddfaa21789068553ede644bbdb86ea7a8490d9f62eeb41abbd23b3985938be65d11f29cc995806eecbb071";
+    private static final String ENCRYPTED_TRANSLATION="32dabb4c5e9846fa7c9c1ab37d5f1cc970f57e044c5b1be7af8b5c21b3e5991315c68af2049d08b3b479bebdb973b463";
     private static Candidate cached(){return new Candidate("qqmusic","123","Song","Artist","",10000,null,"[00:01]自写\n[00:03]歌词",false);}
     private static String base(){return "{\"code\":0,\"retcode\":0,\"lyric\":\""+Base64.getEncoder().encodeToString(cached().synced().getBytes(StandardCharsets.UTF_8))+"\",\"trans\":\""+Base64.getEncoder().encodeToString("[00:01]Original\n[00:03]Lyrics".getBytes(StandardCharsets.UTF_8))+"\"}";}
+    private static String qrcResponse(String original,String translation){
+        return "<result>0</result><content type=\"file\"><![CDATA["+original+"]]></content>"
+                +"<contentts type=\"file\"><![CDATA["+translation+"]]></contentts>";
+    }
     @Test public void qrcVariantDecryptsKnownSelfWrittenFixture() throws Exception {
         String decoded=QrcCrypto.decrypt(QRC);
         var lines=TimedLyrics.qrc(QqMusicSource.lyricContent(decoded));
@@ -37,6 +42,44 @@ public class EnhancedSourcesTest {
         var candidate=source.refresh(cached());
         assertEquals(2,calls[0]);assertTrue(candidate.hasWords());assertTrue(candidate.hasTranslation());
         assertEquals("Original",candidate.timeline().get(0).translation());assertEquals("123",candidate.id());assertTrue(candidate.enhancementError().isBlank());
+    }
+    @Test public void clearQrcTranslationWorksWhenJsonHasNoTranslation() throws Exception {
+        String line=new JSONObject(base()).put("trans","").toString();
+        String response=qrcResponse(QRC,"\r\n[by:测试]\r\n[00:01.00]自写译文\r\n[00:03.00]第二句\r\n");
+        var candidate=new QqMusicSource((url,form)->form==null?line:response).refresh(cached());
+        assertTrue(candidate.hasWords());
+        assertEquals("自写译文",candidate.timeline().get(0).translation());
+        assertEquals("第二句",candidate.timeline().get(1).translation());
+        assertEquals(1400,candidate.timeline().get(0).words().get(1).startMs());
+        assertTrue(candidate.enhancementError().isBlank());
+        var payload=new JSONObject(LyricsJson.payload(candidate,1,true));
+        assertEquals("自写译文",payload.getJSONArray("lines").getJSONObject(0).getString("translatedLyric"));
+    }
+    @Test public void encryptedQrcTranslationStillWorksWithoutLineEndpoint() throws Exception {
+        var source=new QqMusicSource((url,form)->{
+            if(form==null)throw new IOException("HTTP 503");
+            return qrcResponse(QRC,ENCRYPTED_TRANSLATION);
+        });
+        var candidate=source.refresh(cached());
+        assertTrue(candidate.hasWords());
+        assertEquals("加密译句",candidate.timeline().get(0).translation());
+        assertEquals("另一句",candidate.timeline().get(1).translation());
+        assertEquals("HTTP 503",candidate.enhancementError());
+    }
+    @Test public void corruptWordLyricsDoNotPreventValidQrcTranslation() throws Exception {
+        String response=qrcResponse("0000000000000000","[00:01]替换译文");
+        var candidate=new QqMusicSource((url,form)->form==null?base():response).refresh(cached());
+        assertFalse(candidate.hasWords());
+        assertEquals("替换译文",candidate.timeline().get(0).translation());
+        assertEquals("Lyrics",candidate.timeline().get(1).translation());
+        assertTrue(candidate.enhancementError().startsWith("逐字原文处理失败："));
+    }
+    @Test public void corruptQrcTranslationKeepsWordLyricsAndJsonTranslation() throws Exception {
+        String response=qrcResponse(QRC,"0000000000000000");
+        var candidate=new QqMusicSource((url,form)->form==null?base():response).refresh(cached());
+        assertTrue(candidate.hasWords());
+        assertEquals("Original",candidate.timeline().get(0).translation());
+        assertTrue(candidate.enhancementError().startsWith("译文处理失败："));
     }
     @Test public void qrcFailurePreservesLrcAndShowsEnhancementReason() throws Exception {
         var candidate=new QqMusicSource((url,form)->{if(form!=null)throw new IOException("HTTP 503");return base();}).refresh(cached());

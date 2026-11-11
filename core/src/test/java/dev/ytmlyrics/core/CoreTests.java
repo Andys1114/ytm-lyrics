@@ -64,11 +64,19 @@ public final class CoreTests {
                 lyric("one", "2", "Song", "Artist", 180000, false))), () -> false);
         org.junit.Assert.assertEquals("1",result.selected().id());
     }
-    @org.junit.Test public void plainFallbackPreservesSourcePriority() {
+    @org.junit.Test public void plainOnlySourcesCannotSupplyAFallback() {
         Song song = new Song("id", "Song", "Artist", "", 180000);
         Candidate first = lyric("one", "1", "Song", "Artist", 180000, false);
         var result = new Resolver().resolve(song, List.of(source("one", first),
                 source("two", lyric("two", "2", "Song", "Artist", 180000, false))), () -> false);
+        org.junit.Assert.assertNull(result.selected());
+        org.junit.Assert.assertTrue(result.candidates().isEmpty());
+    }
+    @org.junit.Test public void equivalentSyncedResultsPreserveSourcePriority() {
+        Song song = new Song("id", "Song", "Artist", "", 180000);
+        Candidate first = lyric("one", "1", "Song", "Artist", 180000, true);
+        var result = new Resolver().resolve(song, List.of(source("one", first),
+                source("two", lyric("two", "2", "Song", "Artist", 180000, true))), () -> false);
         org.junit.Assert.assertSame(first, result.selected());
     }
     private static void runContracts() {
@@ -92,7 +100,7 @@ public final class CoreTests {
         var result = new Resolver().resolve(song, List.of(source("one", text), source("two", sync)), () -> false);
         check(result.selected() == sync, "lower priority synced beats plain");
         result = new Resolver().resolve(song, List.of(source("one", text), source("two", live)), () -> false);
-        check(result.selected() == text, "plain used after all synced sources");
+        check(result.selected() == null && result.candidates().equals(List.of(live)), "plain filtered even when the timed recording is unreliable");
         result = new Resolver().resolve(song, List.of(source("one", sync, lyric("one", "other", "Song", "Artist", 180000, true))), () -> false);
         check(result.selected().id().equals("other") && result.candidates().size() == 2, "equivalent lyrics prefer closer duration");
         LyricsSource broken = new LyricsSource() {

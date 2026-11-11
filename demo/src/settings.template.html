@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN" class="mdui-theme-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="dark">
+<title>歌词设置</title>
+<style>/* __MDUI_CSS__ */</style>
+<style>/* __SETTINGS_CSS__ */</style>
+</head>
+<body>
+<main id="settings" aria-label="歌词设置">
+  <header class="toolbar"><div><h1 id="sheet-title">歌词设置</h1></div><mdui-button-icon id="close" aria-label="完成并关闭设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></mdui-button-icon></header>
+  <nav class="route-nav" aria-label="歌词工具"><mdui-button id="nav-choose" variant="text">选词</mdui-button><mdui-button id="nav-settings" variant="text">设置</mdui-button></nav>
+  <div class="content">
+    <section class="track" aria-label="当前歌曲">
+      <div class="track-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2.5"/><ellipse cx="17" cy="16" rx="3" ry="2.5"/></svg></div>
+      <div class="track-copy"><h2 id="song-title">正在读取歌曲…</h2><p id="song-artist"></p></div>
+    </section>
+    <div class="status-row"><span class="status-dot" aria-hidden="true"></span><p id="status" role="status"></p></div>
+
+    <p id="renderer-error" class="error" role="alert" hidden></p>
+
+    <section id="choose-page" class="route-page" hidden>
+      <div class="search-row"><mdui-text-field id="query" label="歌名或歌手" variant="outlined" maxlength="256" enterkeyhint="search"></mdui-text-field><mdui-button id="search" variant="tonal">搜索</mdui-button></div>
+      <div class="result-heading"><h2>歌词版本</h2><span id="result-count"></span></div>
+      <p id="search-note" class="helper" role="status"></p>
+      <mdui-list id="candidates" aria-label="可同步的歌词版本"></mdui-list>
+      <div id="empty-results" class="empty-results"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><h2 id="empty-title">还没有可用的歌词</h2><p id="empty-help">换一个歌名或歌手搜索，只显示可同步的版本。</p></div>
+      <mdui-button id="clear-binding" variant="text" full-width>清除本曲选择，恢复自动匹配</mdui-button>
+    </section>
+    <section id="confirm-page" class="route-page" hidden><div class="confirm-copy"><h2>恢复自动匹配？</h2><p>仅清除这首歌记住的歌词选择，保留同步偏移和来源设置。</p></div><mdui-button id="confirm-clear" variant="filled" full-width>清除本曲选择</mdui-button><mdui-button id="cancel-clear" variant="text" full-width>保留选择</mdui-button></section>
+    <div id="settings-page" class="route-page"><section class="sources-section" aria-labelledby="sources-title"><div class="section-label"><h2 id="sources-title">歌词来源</h2><span>按优先顺序</span></div><div id="sources" class="group"></div></section>
+    <section aria-labelledby="preferences-title"><div class="section-label"><h2 id="preferences-title">显示与预载</h2></div>
+      <div class="group preferences">
+        <div class="setting-row"><label for="translation"><span>显示译文</span><small>使用歌词来源自带的翻译</small></label><mdui-switch id="translation" aria-label="显示来源译文"></mdui-switch></div>
+        <div class="setting-row"><label for="preload"><span>预载接下来 3 首</span><small id="preload-status" role="status">等待播放队列</small></label><mdui-switch id="preload" aria-label="预载接下来三首歌词"></mdui-switch></div>
+      </div>
+    </section>
+    <details class="explanation"><summary>如何匹配歌词与保护隐私<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary><p>“选词”按匹配度混排各来源的同步歌词。自动匹配先核对歌曲版本、专辑和时长，再比较逐字和译文；条件相同才用来源顺序。手动选择优先。</p><p>只向已启用的来源发送歌名、歌手、专辑和时长，不读取账号信息。同步偏移不会改变音频进度。</p><details><summary>开源组件与许可</summary><pre>__SETTINGS_LICENSES__</pre></details></details>
+    <mdui-button id="retry" variant="outlined" full-width>重新获取歌词 / 恢复显示</mdui-button>
+    </div><p class="saved-note" id="saved-note">更改即时保存</p>
+  </div>
+</main>
+<script>/* __SETTINGS_BUNDLE__ */</script>
+</body>
+</html>

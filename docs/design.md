@@ -30,7 +30,7 @@
 
 9.41.52 存在两条 UI 路径：旧 `TabbedView` 和设备实际启用的 action-bar / engagement-panel。0.4.1 起，保留原生歌词按钮及面板外壳，在原生呈现入口提供替换正文 View：新版替换 `vke.c()` 的返回值；旧版在 `TabbedView.C(afop, View, View)` 构造不可变 pager 条目前提供替换内容。模块不再作为 LoadingFrameLayout 的同级覆盖层。正文槽互斥挂载自定义显示或完整原生 LoadingFrameLayout；后者保留给原生加载状态及无匹配回退。
 
-无歌词按钮仍可点击，但只产生原生 Snackbar。模块在具体的歌词点击意图之后识别该反馈，通过 `vlf` 注册独立 ID `dev.ytmlyrics.lyrics-panel` 并打开原生 engagement-panel，保留原生标题、关闭、返回与播放器。仅对此独立面板维持原生内容状态，不改变评论或相关推荐。
+无歌词按钮仍可点击，但只产生原生 Snackbar。模块在具体的歌词点击意图之后识别该反馈，通过 `vlf` 注册独立的歌词面板 ID 并打开原生 engagement-panel，保留原生标题、关闭、返回与播放器。仅对此独立面板维持原生内容状态，不改变评论或相关推荐。
 
 本机服务器标签为中文，而部分本地资源为英文，因此不能仅比较“没有歌词”的本地字符串。原生 `content_overlay` 由 Elements renderer 管理，历史实测会隐藏或占用输入；0.4.1 的替换正文直接交给原生呈现器，不占用这个 overlay，也不再挪动原生子项的 margin 或屏蔽其无障碍子树。
 

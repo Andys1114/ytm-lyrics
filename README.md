@@ -1,68 +1,135 @@
 # YTM Lyrics
 
-在 YouTube Music 原生歌词页显示自定义来源歌词，补足缺词歌曲，也可替换已有原生歌词。
+YouTube Music 歌词增强模块。在原生歌词页提供逐字同步、译文和单曲同步微调；未匹配到合适的同步歌词时，保留原生歌词。
 
-使用 **modern libxposed API 102**，以 **AMLL** 呈现逐字填色、弹簧滚动和封面流动背景。当前版本 **0.6.0**。
+基于 **modern libxposed（API 102）** 构建，内嵌 **AMLL（Apple Music-like Lyrics）** 渲染核心，呈现丝滑逐字填色、弹簧阻尼滚动与封面驱动的流动背景。当前版本 **0.7.14**。
 
-## 功能
+[功能特性](#功能特性) · [支持环境](#支持环境) · [快速上手](#快速上手) · [项目架构](#项目架构) · [编译构建](#编译构建) · [源码导航](#源码导航) · [常见问题](#常见问题) · [文档中心](docs/README.md)
 
-- **三个来源**：LRCLIB、QQ 音乐、网易云音乐，可启停、排序和手动选词。
-- **真实同步**：支持 LRC 逐行、QQ QRC／网易云 YRC 逐字和来源自带译文，不伪造字词时间。
-- **自动择优**：先匹配歌曲版本、歌手、专辑和时长，再比较逐字／逐行及译文；手动绑定优先。
-- **AMLL 显示**：当前行与译文高亮、点击歌词跳转、手动滚动三秒后跟随；封面驱动背景，暂停／隐藏时停止流动。
-- **本曲同步**：每首歌独立保存 ±10 秒偏移，以 0.1 秒微调，不改变音频进度。
-- **队列预载**：后台准备接下来三首歌词，当前歌曲查询优先。
-- **原生集成**：替换歌词正文，保留 YTM 的标题、关闭和返回；无可用结果时恢复原生正文。WebView 进程异常最多自动恢复两次。
+---
+
+## 功能特性
+
+- **多歌词来源**：默认按 **网易云音乐 → QQ 音乐 → LRCLIB** 查询。支持来源开关、调整顺序和单曲手动绑定。
+- **MDUI 面板与快速同步 (0.7.9)**：选词、搜索、清除确认和偏好使用离线 Material Design 3 面板；同步在标题下展开单行原生调节条，边看歌词边调整，设置预热复用。详见 [设置界面](docs/settings-ui.md)。
+- **真实时间轴**：支持网易云音乐 YRC、QQ 音乐 QRC 逐字歌词，以及 LRC 逐行歌词。没有字词时间时按行高亮。
+- **智能匹配与择优**：自动过滤 MV、伴奏及音轨后缀，同时保留 Live / Remix 等版本标记；在时长差距 ≤2 秒的候选中，优先采用同专辑、高同步级别与自带翻译的结果；用户手动绑定享有最高优先权。
+- **AMLL 动效呈现**：
+  - **逐字平滑填色**：随音频进度平滑染色，高亮长音与当前活动行。
+  - **弹簧阻尼滚动**：手势滑动浏览歌词，停止触控 3 秒后自动平滑回弹跟随当前演唱进度。
+  - **点击精准定位**：点击任意歌词行即刻跳转音频；微调时间偏移后自动反算实际播放落点。
+  - **双语对齐译文**：清晰展示来源自带翻译文本，随原文活动行同步高亮。
+- **封面动态背景 (0.6.0)**：基于 WebGL 与 AMLL `MeshGradientRenderer`，从当前歌曲专辑封面提取主色，渲染柔和流动网格；音频暂停或息屏时自动停止流动；原生面板标题智能采样衔接色。
+- **单曲时间微调 (0.5.0)**：支持 **±10.0 秒** 独立时间微调（步长 0.5 秒），遵循“慢了就提前，快了就延后”原则；微调仅持久化关联当前歌曲，不影响音频本身。
+- **播放队列预载 (0.4.0)**：后台低优先级线程根据实际播放列表，滚动预载后续 3 首歌曲的歌词候选，实现切歌秒出词。
+- **原生集成与容错保障 (0.4.1)**：
+  - **互斥挂载**：有自定义歌词时安全隐藏原生正文，消除触控冲突与焦点竞争；无结果时无缝恢复原生正文。
+  - **限次自动恢复**：若系统内存回收 WebView 渲染进程，立即降级显示纯文本逐行歌词，并通过退避等待（1s、3s）最多尝试自动重建 2 次。
+
+---
 
 ## 支持环境
 
-| 项目 | 当前目标 |
-| --- | --- |
-| Android | Android 16 / API 36，root |
-| YouTube Music | **9.41.52 / versionCode 94152240** |
-| 框架 | 支持 modern libxposed API 102 的框架；已有 LSPosed 2.2.1 环境记录 |
-| 模块 | `dev.ytmlyrics`，仅作用于 `com.google.android.apps.youtube.music` |
+| 运行环境 | 目标配置 | 说明 |
+| --- | --- | --- |
+| **操作系统** | **Android 16（API 36）**，已获取 Root 权限 | 保持现代安全与系统兼容 |
+| **YouTube Music** | **9.41.52（versionCode 94152240）** | 混淆类名与 Hook 点精确绑定该版本 |
+| **Xposed 框架** | 支持 **modern libxposed API 102** 的框架 | 已在 LSPosed 2.2.1 环境下验证 |
+| **注入作用域** | 仅作用于 `com.google.android.apps.youtube.music` | 模块无独立图标，设置入口内嵌在 YTM 歌词页 |
 
-Hook 与宿主混淆类名按上述 YTM 版本适配。其他版本不注入歌词页面；升级 YTM 前需重新适配。模块没有独立启动界面，设置入口在 YTM 歌词页。
+> [!WARNING]
+> YouTube Music 升级后混淆类名通常会发生变动。在升级 YTM 客户端前，请确认本模块已发布对应版本的更新，否则 Hook 将无法挂载。
 
-## 安装与使用
+---
 
-1. 从 [Releases](https://github.com/Andys1114/ytm-lyrics/releases) 下载维护者发布的 APK；尚未发布时按 [构建说明](docs/building.md) 自行构建。
-2. 安装模块，在框架管理器中启用，作用域仅选择 YouTube Music。
-3. 完全退出并重新打开 YTM，播放歌曲并打开“歌词”。
-4. 点原生标题 **歌词 ⋯** 进入统一设置，管理候选、来源、译文、预载、同步偏移和重新获取。旧 tab／其他标题样式下显示一个“歌词设置”按钮。
+## 快速上手
 
-更新时使用同一签名的 APK 覆盖安装。不要为更新清除 YTM 数据，否则绑定、来源设置、缓存与本曲偏移会一并删除。
+### 1. 安装与激活
+1. 公开版发布后，从 [Xposed 模块目录](https://modules.lsposed.org/) 搜索 **YTM Lyrics**（`io.github.andys1114.ytmlyrics`）并下载安装。也可以按[构建说明](docs/building.md)自行编译。
+2. 在 Xposed 管理器（如 LSPosed）中激活 **YTM Lyrics**，作用域仅勾选 **YouTube Music**。
+3. 强行停止并重新启动 YouTube Music。
 
-详细行为与限制见 [使用说明](docs/usage.md)。**手机安装与测试由使用者负责**；电脑构建／浏览器检查不代表目标设备已经验收。
+### 2. 界面与操作
+1. 在 YouTube Music 中播放任意歌曲，展开底部的**“歌词”**面板。
+2. **快捷操作**：歌词标题同一行直接提供 **选词 / 同步 / 设置**：
+   - **时间微调**：点标题栏的偏移读数，在原位展开竖向滚轮。上下拨动每格 0.5 秒。
+   - **换词绑定**：点击“选词”查看版本或手动搜索；清除绑定需再次确认。
+   - **来源管理**：调整网易云音乐、QQ 音乐和 LRCLIB 的开关与顺序。
+3. **日常听歌**：上下滑动歌词自由浏览，松手 3 秒后自动恢复跟随；点击任意歌词行跳转播放进度。
 
-## 构建
+> [!NOTE]
+> 覆盖更新时请使用维护者相同签名的 APK。**请勿为了更新清除 YouTube Music 应用数据**，否则已保存的手动歌词绑定、偏好设置与本曲同步偏移会一并丢失。
+>
+> **手机端安装与真机体验由使用者负责验证**；电脑端编译、单元测试与浏览器预览不代表真实机型的最终表现。
 
-需要 JDK 17、Android SDK Platform 36、Build Tools 36.0.0；Gradle Wrapper 已包含在仓库中。
+---
+
+## 编译构建
+
+构建需要 **JDK 17**、**Android SDK Platform 36** 与 **Build Tools 36.0.0**；Gradle 包装器已内置于仓库。
 
 ```powershell
-# Windows：测试、Lint、构建，输出到 dist/
+# Windows 环境：执行自动化测试、Lint 检查与 APK 编译
 .\build.ps1
 ```
 
-Linux／macOS 及修改渲染源码后的构建步骤见 [构建与签名](docs/building.md)。生成后的 HTML 随源码保存，普通 Android 构建不需要 Node.js。
+```bash
+# Linux / macOS 环境
+./gradlew :core:check :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --console plain
+```
 
-## 源码导航
+编译产物将输出至 `dist/` 目录。关于离线 AMLL 前端、试装签名和浏览器预览，见[构建与签名指南](docs/building.md)；维护者准备目录版时，见 [Xposed 模块目录发布流程](docs/publishing.md)。
 
-- [`core/`](core/src/main/java/dev/ytmlyrics/core/)：纯 Java 歌曲／歌词模型、匹配、时间轴、偏移和预载策略。
-- [`app/`](app/src/main/java/dev/ytmlyrics/)：宿主 Hook、来源协议、持久化和 Android 显示层。
-- [`demo/`](demo/README.md)：AMLL 渲染源码、离线预览与 Node 检查；生产 HTML 由此生成。
-- [`docs/`](docs/README.md)：使用、架构、构建、隐私及历史实现记录。
-- [更新记录](CHANGELOG.md) · [参与开发](CONTRIBUTING.md) · [上传与发布](docs/publishing.md)
+---
 
-## 隐私与来源限制
+## 项目架构
 
-查询向已启用的来源发送歌名、歌手、可选专辑和时长；选词后按来源歌曲 ID 取词。不读取账号凭据，不跨来源拼接译文，不调用机器翻译。封面来自宿主现有媒体会话，不额外下载。详情见 [隐私与数据流](docs/privacy.md)。
+```text
+ytm-lyrics/
+├── core/                # 纯 Java 领域核心：歌曲模型、匹配算法、时间轴推算、偏移模型、队列预载调度
+├── app/                 # Android 宿主交互：Hook 适配、HTTP 协议解密、持久化存储、互斥挂载、恢复管理
+├── demo/                # AMLL 和 MDUI 前端：esbuild 打包、电脑端离线预览
+│   └── src/             # 生产渲染器源码与时间轴桥接
+└── docs/                # 官方文档中心：使用说明、架构契约、构建指南、隐私规范与历史档案
+```
 
-QQ／网易云使用未公开接口，服务端变化可能导致失效。请遵守来源服务条款及歌词权利人的要求。本仓库不分发宿主 APK、反编译产物、真实歌词数据或用户设备资料。
+详细的系统拓扑图与组件时序流请参阅 [架构与行为契约](docs/architecture.md)。
+
+---
+
+## 常见问题
+
+- **为什么歌词界面显示的是 YouTube Music 原生歌词？**
+
+  A: 请检查 LSPosed 模块是否已激活并勾选 YTM；同时确认当前 YTM 宿主版本是否为精确适配的 **9.41.52**。
+- **歌词唱得快了或慢了，怎么调？**
+
+  A: 点标题栏的偏移读数，向上拨动提前，向下拨动延后；也可点相邻档位或归零。偏移只记住本曲。
+- **为什么有的歌有逐字填色，有的歌只有整行高亮？**
+
+  A: 系统坚持真实数据原则。若来源提供 QRC/YRC 逐字数据，则呈现平滑逐字填色；若来源仅有普通 LRC，则规范使用逐行高亮，不伪造字词动画。
+
+更多疑难排查与操作说明，请查阅 [使用说明 - 常见问题排查](docs/usage.md#常见问题与故障排查)。
+
+---
+
+## 隐私与数据安全
+
+- 仅在播放或手动搜索时向已启用的来源查询歌曲元数据，**绝不读取、收集或上传用户的 YouTube 账号、Cookie 或设备标识**。
+- 专辑封面直接复用当前媒体会话，**不进行任何外部网络上传**；内嵌 WebView 强制启用严格 CSP 策略，**完全禁用外部网络连接与本地文件访问**。
+- 详情请查阅 [隐私与数据流规范](docs/privacy.md)。
+
+---
 
 ## 许可与致谢
 
-项目采用 **AGPL-3.0-only**，全文见 [LICENSE](LICENSE)。AMLL 使用相同许可；QQ／网易云协议与 QRC 解密改编代码保留其 Apache-2.0 归属。具体来源、修改与完整许可证位置见 [第三方说明](THIRD_PARTY_NOTICES.md) 和 [NOTICE](NOTICE)。
+- 本项目采用 **AGPL-3.0-only** 开源许可，全文见 [LICENSE](LICENSE)。
+- AMLL 核心采用相同许可；QQ 音乐与网易云音乐协议适配和解密代码保留上游原始 Apache-2.0 归属。
+- 完整第三方许可清单与致谢声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [NOTICE](NOTICE)。
+- 特别鸣谢：
+  - [AMLL (Apple Music-like Lyrics)](https://github.com/amll-dev/applemusic-like-lyrics)
+  - [Spotify_lyric](https://github.com/absswds/Spotify_lyric)
+  - [Lyricify-Lyrics-Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper)
+  - [LRCLIB](https://lrclib.net/)
 
-感谢 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)、[Spotify_lyric](https://github.com/absswds/Spotify_lyric)、[Lyricify Lyrics Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper) 与 [LRCLIB](https://lrclib.net/)。项目与 YouTube、Google、Apple、腾讯及网易无隶属关系。
+*声明：本项目为独立开源插件，与 YouTube、Google、Apple、腾讯音乐或网易云音乐无任何官方隶属或关联关系。*

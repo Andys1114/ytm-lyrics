@@ -3,6 +3,8 @@ package dev.ytmlyrics.source;
 import android.content.SharedPreferences;
 import dev.ytmlyrics.core.Candidate;
 import dev.ytmlyrics.core.Matching;
+import dev.ytmlyrics.core.LyricsResults;
+import dev.ytmlyrics.core.Resolver;
 import dev.ytmlyrics.core.Song;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -18,11 +20,8 @@ public final class PreloadCache {
     private static final int MAX_ITEMS=30,MAX_BYTES=4*1024*1024;
     private static final String PREFIX="pool:";
     public record Pool(List<Candidate> candidates,boolean complete) {
-        public Candidate best(Song song) {
-            Candidate best=null;
-            for(var value:candidates)if(Matching.reliable(song,value) && (best==null || Matching.compare(song,value,best)>0))best=value;
-            return best;
-        }
+        public Pool { candidates=LyricsResults.timed(candidates); }
+        public Candidate best(Song song) { return Resolver.select(song,candidates); }
     }
     private final SharedPreferences prefs;
     private final LongSupplier clock;
@@ -39,13 +38,14 @@ public final class PreloadCache {
                     || !Matching.normalize(song.artist()).equals(Matching.normalize(entry.getString("artist"))))return null;
             var array=entry.getJSONArray("candidates");var candidates=new ArrayList<Candidate>();
             for(int i=0;i<array.length();i++)candidates.add(BindingStore.decode(array.getJSONObject(i)));
-            return new Pool(List.copyOf(candidates),entry.optBoolean("complete"));
+            var pool=new Pool(candidates,entry.optBoolean("complete"));
+            return pool.candidates().isEmpty()?null:pool;
         }catch(org.json.JSONException|IllegalArgumentException error){prefs.edit().remove(key).apply();return null;}
     }
     public synchronized void put(Song song,String policy,List<Candidate> candidates,boolean complete) {
         try {
             var data=new JSONArray();
-            for(var candidate:candidates)if(candidate.hasLyrics())data.put(BindingStore.encode(candidate));
+            for(var candidate:LyricsResults.timed(candidates))data.put(BindingStore.encode(candidate));
             if(data.length()==0)return;
             String raw=new JSONObject().put("title",song.title()).put("artist",song.artist()).put("policy",policy)
                     .put("time",clock.getAsLong()).put("complete",complete).put("candidates",data).toString();

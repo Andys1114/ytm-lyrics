@@ -11,7 +11,7 @@ public final class SourceRegistry {
     private final LinkedHashMap<String, LyricsSource> providers = new LinkedHashMap<>();
     private final SharedPreferences preferences;
     public SourceRegistry(SharedPreferences preferences) {
-        this(preferences, List.of(new LrclibSource(), new QqMusicSource(), new NeteaseSource()));
+        this(preferences, List.of(new NeteaseSource(), new QqMusicSource(), new LrclibSource()));
     }
     SourceRegistry(SharedPreferences preferences, List<LyricsSource> implementations) {
         this.preferences = preferences;
