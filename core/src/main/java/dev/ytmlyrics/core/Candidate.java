@@ -4,10 +4,16 @@ import java.util.List;
 
 public record Candidate(String sourceId, String id, String title, String artist, String album,
                         long durationMs, String plain, String synced, boolean instrumental,
-                        List<TimedLyrics.Line> enhanced, String enhancementError) {
+                        List<TimedLyrics.Line> enhanced, String enhancementError, String translationSourceId) {
     public Candidate {
         enhanced = enhanced == null ? List.of() : List.copyOf(enhanced);
         enhancementError = enhancementError == null ? "" : enhancementError;
+        translationSourceId = translationSourceId == null ? "" : translationSourceId;
+    }
+    public Candidate(String sourceId, String id, String title, String artist, String album,
+                     long durationMs, String plain, String synced, boolean instrumental,
+                     List<TimedLyrics.Line> enhanced, String enhancementError) {
+        this(sourceId,id,title,artist,album,durationMs,plain,synced,instrumental,enhanced,enhancementError,"");
     }
     public Candidate(String sourceId, String id, String title, String artist, String album,
                      long durationMs, String plain, String synced, boolean instrumental) {

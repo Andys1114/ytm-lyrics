@@ -27,16 +27,16 @@ public class PlaylistPreloaderTest {
         public boolean contains(Song song,PlaylistPreloader.Policy policy){return values.containsKey(song.key()+policy.cacheKey());}
         public void put(Song song,PlaylistPreloader.Policy policy,List<Candidate> found,boolean complete){values.put(song.key()+policy.cacheKey(),found);}
     }
-    @Test public void sourcePolicyKeepsLegacyCacheKeyAndAnImmutableOrderedSnapshot() {
+    @Test public void sourcePolicyVersionsAutomaticSearchAndKeepsAnImmutableOrderedSnapshot() {
         var ids=new ArrayList<>(List.of("qqmusic","netease"));
         var policy=new PlaylistPreloader.Policy(ids);ids.clear();
         assertEquals(List.of("qqmusic","netease"),policy.sourceIds());
-        assertEquals("automatic-v2/qqmusic,netease",policy.cacheKey());
+        assertEquals("automatic-v3/qqmusic,netease",policy.cacheKey());
         assertEquals(PlaylistPreloader.policy(SOURCES),policy.cacheKey());
         assertEquals(policy,PlaylistPreloader.Policy.fromSources(SOURCES));
         assertNotEquals(policy,PlaylistPreloader.Policy.fromSources(List.of(source("netease"),source("qqmusic"))));
         assertFalse(PlaylistPreloader.Policy.fromSources(List.of(source("netease"))).sourceIds().contains("qqmusic"));
-        assertEquals("automatic-v2/",PlaylistPreloader.policy(List.of()));
+        assertEquals("automatic-v3/",PlaylistPreloader.policy(List.of()));
         try{policy.sourceIds().add("lrclib");fail();}catch(UnsupportedOperationException expected){}
     }
     @Test public void preloadsOnlyThreeSeriallyAndRepeatedPublicationDoesNotRefetch() {

@@ -62,4 +62,35 @@ public class AutomaticSelectionTest {
         var closer=lyric("a","2","Song","Artist","Album",180100,true,"");
         assertSame(closer,select(first,closer));
     }
+    @Test public void traditionalMetadataMatchesSimplifiedCandidatesWithoutChangingReturnedText() {
+        var song=new Song("yt","繁體測試 (Official Audio)","樂隊 - Topic","專輯",180000);
+        var wrongAlbum=lyric("first","1","繁体测试","乐队","Other album",180000,true,"");
+        var sameAlbum=lyric("second","2","繁体测试","乐队","专辑",180000,false,"");
+        assertTrue(Matching.reliable(song,sameAlbum));
+        var result=new Resolver().resolve(song,List.of(source("first",wrongAlbum),source("second",sameAlbum)),()->false);
+        assertSame(sameAlbum,result.selected());assertEquals("繁体测试",sameAlbum.title());assertEquals("自写",sameAlbum.timeline().get(0).text());
+        assertTrue(Matching.reliable(new Song("yt","繁体测试","乐队","专辑",180000),
+                lyric("first","3","繁體測試","樂隊","專輯",180000,false,"")));
+    }
+    @Test public void collaboratorDisplayTagDoesNotBlockTheMatchingRecordingOrHideLiveVersion() {
+        var song = new Song("yt", "日不落 (Live)（合作音乐人：甲）", "蔡依林（合作音樂人：甲）", "专辑（合作音乐人：乙）", 180000);
+        var live = lyric("qq", "1", "日不落 (Live)", "蔡依林", "专辑", 180500, true, "");
+        var studio = lyric("netease", "2", "日不落", "蔡依林", "专辑", 180000, true, "");
+        assertTrue(Matching.albumMatches(song, live));
+        assertFalse(Matching.reliable(song, studio));
+        assertSame(live, new Resolver().resolve(song, List.of(source("netease", studio), source("qq", live)), () -> false).selected());
+    }
+    @Test public void videoSearchRelaxationDoesNotRelaxSingerVersionOrDurationReliability() {
+        var video=new Song("yt","繁體測試","影片發佈者","專輯",180000,Song.PlaybackType.VIDEO);
+        var candidate=lyric("first","1","繁体测试","乐队","专辑",180000,true,"");
+        assertFalse(Matching.reliable(video,candidate));
+        var result=new Resolver().resolve(video,List.of(source("first",candidate)),()->false);
+        assertNull(result.selected());assertEquals(List.of(candidate),result.candidates());
+        for(var type:new Song.PlaybackType[]{Song.PlaybackType.AUDIO,Song.PlaybackType.VIDEO}) {
+            var performed=new Song("yt","繁體測試","樂隊","專輯",180000,type);
+            assertTrue(Matching.reliable(performed,candidate));
+            assertFalse(Matching.reliable(performed,lyric("first","2","繁体测试 (Live)","乐队","专辑",180000,true,"")));
+            assertFalse(Matching.reliable(performed,lyric("first","3","繁体测试","乐队","专辑",183000,true,"")));
+        }
+    }
 }

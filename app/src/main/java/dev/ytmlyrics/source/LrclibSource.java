@@ -2,6 +2,7 @@ package dev.ytmlyrics.source;
 
 import dev.ytmlyrics.core.Candidate;
 import dev.ytmlyrics.core.LyricsSource;
+import dev.ytmlyrics.core.SearchQuery;
 import dev.ytmlyrics.core.Song;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -23,16 +24,17 @@ public final class LrclibSource implements LyricsSource {
     public String id() { return "lrclib"; }
     public String name() { return "LRCLIB"; }
     public List<Candidate> search(Song song, String query) throws Exception {
-        if (query.isBlank()) {
-            String url = BASE + "get?track_name=" + encode(song.title()) + "&artist_name=" + encode(song.artist());
-            if (!song.album().isBlank()) url += "&album_name=" + encode(song.album());
+        SearchQuery search=SearchQuery.of(song,query);
+        if (query.isBlank() && !search.artist().isBlank()) {
+            String url = BASE + "get?track_name=" + encode(search.title()) + "&artist_name=" + encode(search.artist());
+            if (!search.album().isBlank()) url += "&album_name=" + encode(search.album());
             if (song.durationMs() >= 1000 && song.durationMs() <= 3600000) url += "&duration=" + song.durationMs() / 1000.0;
             String exact = transport.get(url, true);
             if (exact != null) return List.of(decode(new JSONObject(exact)));
         }
         String url = query.isBlank()
-                ? BASE + "search?track_name=" + encode(song.title()) + "&artist_name=" + encode(song.artist())
-                : BASE + "search?q=" + encode(query);
+                ? BASE + "search?track_name=" + encode(search.title()) + (search.artist().isBlank() ? "" : "&artist_name=" + encode(search.artist()))
+                : BASE + "search?q=" + encode(search.keywords());
         JSONArray array = new JSONArray(transport.get(url, false));
         List<Candidate> found = new ArrayList<>();
         for (int i = 0; i < array.length(); i++) found.add(decode(array.getJSONObject(i)));

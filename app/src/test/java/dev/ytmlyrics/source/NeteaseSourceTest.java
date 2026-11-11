@@ -3,6 +3,8 @@ package dev.ytmlyrics.source;
 import dev.ytmlyrics.core.Candidate;
 import dev.ytmlyrics.core.Song;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import org.junit.Test;
 import static org.junit.Assert.*;
@@ -37,5 +39,30 @@ public class NeteaseSourceTest {
             try{new NeteaseSource(url->body).search(SONG,"");fail();}catch(IOException expected){assertNotNull(expected.getMessage());}
         }
         assertTrue(new NeteaseSource(url->"{\"code\":200,\"result\":{\"songCount\":0}}").search(SONG,"").isEmpty());
+    }
+    @Test public void automaticKeywordsNormalizeMetadataAndOmitOnlyKnownVideoPublisher() throws Exception {
+        for(var type:Song.PlaybackType.values()) {
+            var song=new Song("yt","繁體測試、現場","影片發佈者和樂隊","專輯",10000,type);
+            String expected=type==Song.PlaybackType.VIDEO ? "繁体测试 现场" : "繁体测试 现场 影片发布者 乐队";
+            var source=new NeteaseSource(url->{
+                assertTrue(url.contains("cloudsearch"));
+                assertTrue(url.contains("&s="+URLEncoder.encode(expected,StandardCharsets.UTF_8)+"&"));
+                return "{\"code\":200,\"result\":{\"songCount\":0}}";
+            });
+            assertTrue(source.search(song,"").isEmpty());
+        }
+    }
+    @Test public void manualVideoKeywordsKeepPublisherAndReturnedLyricsKeepOriginalScript() throws Exception {
+        var song=new Song("yt","別的歌","影片發佈者","",10000,Song.PlaybackType.VIDEO);
+        var source=new NeteaseSource(url->{
+            if(url.contains("cloudsearch")) {
+                assertTrue(url.contains("&s="+URLEncoder.encode("繁体测试 影片发布者 Live",StandardCharsets.UTF_8)+"&"));
+                return SEARCH.replace("Song","繁體測試").replace("Artist","樂隊").replace("Album","專輯");
+            }
+            return LYRIC.replace("自写","自寫").replace("(1000,400,0)自(1400,600,0)写","(1000,400,0)自(1400,600,0)寫");
+        });
+        var candidate=source.search(song,"繁體測試 影片發佈者 Live").get(0);
+        assertEquals("繁體測試",candidate.title());assertEquals("樂隊",candidate.artist());assertEquals("專輯",candidate.album());
+        assertEquals("自寫",candidate.timeline().get(0).text());assertEquals("123",candidate.id());
     }
 }

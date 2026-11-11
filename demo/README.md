@@ -1,5 +1,13 @@
 # 真正的 AMLL 逐字歌词预览
 
+## MDUI 面板与同步滚轮预览
+
+打开 `settings-preview.html`，点标题栏的偏移读数，以同一读数为中心展开竖向滚轮。上下拨动或点相邻档位，每格 0.5 秒；点读数或正文收起。设置页使用 APK 同源的离线 MDUI 2.1.5；底层歌词和原生标题栏为交互示意。预览状态只存在电脑内存，不调用歌词接口、不写手机配置。
+
+`src/settings.template.html`、`src/settings.css`、`src/settings.js` 是生产页面，`src/settings-model.js` 提供显示用的时间值格式与电脑样例。`build-settings.mjs` 由 `npm run build` 一起运行，输出 `app/src/main/assets/settings/settings.html`、`settings-preview.html` 和 MDUI 完整许可。`src/settings-harness.js` 仅进入电脑预览。详细接入与手机验收要点见 [设置界面](../docs/settings-ui.md)。
+
+## AMLL 歌词预览
+
 打开 `lyrics-preview.html`，点「播放」体验逐字填色、长音强调和弹簧滚动。拖动进度可比较同一个词在不同时间的效果；译文默认开启，点击歌词行可跳到原始行时间。停止手动滚动三秒后恢复跟随。
 
 这是 30 秒自写中英文示例的模拟时间轴，不播放音频、不调用歌词接口。成品是单文件，所有脚本、样式和许可证都已内嵌，使用时无需 npm、网络或服务端。独立 Demo 不修改插件数据；用户确认后，0.3.0 已将同一 AMLL 核心接入插件。手机测试仍由用户负责。

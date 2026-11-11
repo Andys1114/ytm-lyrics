@@ -22,7 +22,7 @@ public final class QueuePlan {
         var result=new ArrayList<Song>();
         for(int i=index+1;i<queue.size() && result.size()<limit;i++) {
             Song song=queue.get(i).song();
-            if(song!=null && !song.id().isBlank() && !song.title().isBlank() && !song.artist().isBlank()
+            if(song!=null && !song.id().isBlank() && !song.title().isBlank() && (song.isVideo() || !song.artist().isBlank())
                     && seen.add(song.key()))result.add(song);
         }
         return List.copyOf(result);
@@ -34,7 +34,23 @@ public final class QueuePlan {
         if(activeQueueId!=-1)for(var item:queue)
             if(item.queueId()==activeQueueId && sameNames(current,item.song())){named=item.song();break;}
         if(named==null){int index=uniqueNamedIndex(queue,current);if(index>=0)named=queue.get(index).song();}
-        return named==null ? current:new Song(named.id(),current.title(),current.artist(),current.album(),current.durationMs());
+        return named==null ? current:new Song(named.id(),current.title(),current.artist(),current.album(),current.durationMs(),current.playbackType());
+    }
+    /** Copy a verified host type without changing the metadata or legacy binding identity. */
+    public static Song withPlaybackType(List<Item> queue,long activeQueueId,Song current) {
+        if(current==null)return null;
+        Song named=null;
+        if(!current.id().isBlank()) {
+            for(var item:queue)if(item.song()!=null && current.id().equals(item.song().id())) {
+                if(named==null || item.queueId()==activeQueueId)named=item.song();
+                if(item.queueId()==activeQueueId)break;
+            }
+        } else {
+            if(activeQueueId!=-1)for(var item:queue)
+                if(item.queueId()==activeQueueId && sameNames(current,item.song())){named=item.song();break;}
+            if(named==null){int index=uniqueNamedIndex(queue,current);if(index>=0)named=queue.get(index).song();}
+        }
+        return named==null || named.playbackType()==Song.PlaybackType.UNKNOWN ? current:current.withPlaybackType(named.playbackType());
     }
     private static int uniqueNamedIndex(List<Item> queue,Song current) {
         int found=-1;String id=null;

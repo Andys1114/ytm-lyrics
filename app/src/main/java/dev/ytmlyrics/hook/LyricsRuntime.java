@@ -3,7 +3,6 @@ package dev.ytmlyrics.hook;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
@@ -25,7 +24,9 @@ import android.widget.SeekBar;
 import android.view.Gravity;
 import dev.ytmlyrics.core.Candidate;
 import dev.ytmlyrics.core.LyricsSource;
+import dev.ytmlyrics.core.LyricsResults;
 import dev.ytmlyrics.core.Resolver;
+import dev.ytmlyrics.core.SearchQuery;
 import dev.ytmlyrics.core.Song;
 import dev.ytmlyrics.core.QueuePlan;
 import dev.ytmlyrics.core.PlaylistPreloader;
@@ -36,6 +37,9 @@ import dev.ytmlyrics.source.SourceRegistry;
 import dev.ytmlyrics.source.OffsetStore;
 import dev.ytmlyrics.ui.LyricsPanel;
 import dev.ytmlyrics.ui.ArtworkFrame;
+import dev.ytmlyrics.ui.SettingsCommand;
+import dev.ytmlyrics.ui.SettingsDialog;
+import dev.ytmlyrics.ui.SettingsState;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +61,10 @@ final class LyricsRuntime implements LyricsPanel.Actions {
         Thread thread = new Thread(job, "ytm-lyrics-source"); thread.setDaemon(true); return thread;
     });
     private final WeakHashMap<ViewGroup, WeakReference<LyricsPanel>> panels = new WeakHashMap<>();
-    private final WeakHashMap<View,Drawable> headers=new WeakHashMap<>();
+    private final dev.ytmlyrics.ui.LyricsHeaderActions headerActions=new dev.ytmlyrics.ui.LyricsHeaderActions();
+    private final dev.ytmlyrics.ui.SyncExpansion syncExpansion=new dev.ytmlyrics.ui.SyncExpansion();
+    private WeakReference<View> syncAnchor=new WeakReference<>(null);
+    private final dev.ytmlyrics.ui.LyricsHeaderChrome headers=new dev.ytmlyrics.ui.LyricsHeaderChrome();
     private final ArtworkState<Bitmap> artworkState=new ArtworkState<>();
     private ArtworkFrame artwork=ArtworkFrame.empty(0);
     private final ExecutorService artworkWorker=Executors.newSingleThreadExecutor(job->{
@@ -66,12 +73,16 @@ final class LyricsRuntime implements LyricsPanel.Actions {
     private Song song;
     private Candidate selected;
     private List<Candidate> candidates = List.of();
+    private boolean manualResults;
+    private String resultQuery="";
     private String message = "播放歌曲后查询歌词";
     private String requestedKey;
     private SourceRegistry sources;
     private OffsetStore offsets;
     private int lyricAdvanceMs;
     private WeakReference<AlertDialog> settingsDialog=new WeakReference<>(null);
+    private WeakReference<SettingsDialog> settingsSheet=new WeakReference<>(null);
+    private String settingsRoute="settings", searchQuery="";
     private WeakReference<TextView> settingsStatus=new WeakReference<>(null);
     private BindingStore bindings;
     private PreloadCache cache;
@@ -108,6 +119,7 @@ final class LyricsRuntime implements LyricsPanel.Actions {
         if (known != null && known.get() != null) { startTicker(); return known.get(); }
         initialize(root.getContext());
         LyricsPanel panel = new LyricsPanel(root.getContext(), this, moduleApk);
+        panel.headerMenuAttached(hasInlineHeader(root.getContext()));
         panels.put(root, new WeakReference<>(panel));
         // Return this content view to the native presenter instead of adding a sibling over
         // LoadingFrameLayout. Keep that original root intact for native updates and fallback.
@@ -117,15 +129,19 @@ final class LyricsRuntime implements LyricsPanel.Actions {
         if(parent!=null)parent.removeView(root);
         panel.nativeContent(root);
         panel.display(selected, message);
+        panel.syncExpansion(openSyncAnchor(songKey()),songKey(),lyricAdvanceMs);
         panel.artwork(artwork);
         if(parent!=null)parent.addView(panel,index,params);
         panel.addOnAttachStateChangeListener(new android.view.View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(android.view.View view) { startTicker(); }
-            @Override public void onViewDetachedFromWindow(android.view.View view) {}
+            @Override public void onViewDetachedFromWindow(android.view.View view) { main.post(LyricsRuntime.this::visible); }
         });
         panel.position(position(),isPlaying(),speed(),playbackEpoch);
         lookup(false);
         startTicker();
+        // Delay warming until after the lyric surface's first frame. Never show a window here.
+        panel.postDelayed(()->{if(panel.isAttachedToWindow() && panel.isShown() && panel.getWindowVisibility()==View.VISIBLE
+                && liveActivity(panel.getContext()))prepareSettings(panel.getContext());},600);
         return panel;
     }
     void loadingChanged(ViewGroup root) {
@@ -148,7 +164,7 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             @Override public boolean contains(Song value,PlaylistPreloader.Policy policy){
                 Candidate binding=bindings.get(value);
                 // Source enable/order is captured in the policy; do not access mutable registry state here.
-                return (binding!=null && policy.sourceIds().contains(binding.sourceId())) || cache.get(value,policy.cacheKey())!=null;
+                return (LyricsResults.displayable(binding) && policy.sourceIds().contains(binding.sourceId())) || cache.get(value,policy.cacheKey())!=null;
             }
             @Override public void put(Song value,PlaylistPreloader.Policy policy,List<Candidate> found,boolean complete){cache.put(value,policy.cacheKey(),found,complete);}
         },(value,enabled,cancelled)->new Resolver().resolve(value,enabled,cancelled),System::currentTimeMillis,
@@ -160,6 +176,7 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             initialize(context);
             if(controller!=null && !controller.getSessionToken().equals(session.getSessionToken()))return;
             controller=session.getController();queueToken=session.getSessionToken();queue=items;
+            inheritPlaybackType();
             lookup(false);updatePreload();
         });
     }
@@ -175,6 +192,20 @@ final class LyricsRuntime implements LyricsPanel.Actions {
     private Song cacheIdentity(Song value) {
         if(controller==null || queueToken==null || !queueToken.equals(controller.getSessionToken()))return value;
         return QueuePlan.cacheIdentity(queue,playback==null?-1:playback.getActiveQueueItemId(),value);
+    }
+    private Song playbackType(Song value) {
+        if(value==null || value.playbackType()!=Song.PlaybackType.UNKNOWN || controller==null || queueToken==null
+                || !queueToken.equals(controller.getSessionToken()))return value;
+        return QueuePlan.withPlaybackType(queue,playback==null?-1:playback.getActiveQueueItemId(),value);
+    }
+    private void inheritPlaybackType() {
+        Song typed=playbackType(song);
+        if(typed!=song){song=typed;requestedKey=null;}
+    }
+    // Android's @LongKey lists framework fields; this extra is owned and written by PlaybackTypeAdapter.
+    @android.annotation.SuppressLint("WrongConstant")
+    private static Song.PlaybackType metadataPlaybackType(MediaMetadata metadata) {
+        return HostPlaybackType.decode(metadata.getLong(HostPlaybackType.METADATA_KEY));
     }
     private void foreground(boolean busy){foregroundBusy=busy;updatePreload();}
     private String preloadLabel() {
@@ -199,7 +230,9 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             String artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
             if (artist == null || artist.isBlank()) artist = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST);
             Song next = new Song(metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID), title, artist,
-                    metadata.getString(MediaMetadata.METADATA_KEY_ALBUM), metadata.getLong(MediaMetadata.METADATA_KEY_DURATION));
+                    metadata.getString(MediaMetadata.METADATA_KEY_ALBUM), metadata.getLong(MediaMetadata.METADATA_KEY_DURATION),
+                    metadataPlaybackType(metadata));
+            next=playbackType(next);
             boolean changed = song == null || !song.equals(next);
             song = next;
             Bitmap cover=metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
@@ -207,7 +240,7 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             if(cover==null)cover=metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
             updateArtwork(next.key(),cover);
             if (changed) {
-                closeSettings();lyricAdvanceMs=offsets==null?0:offsets.get(next);
+                closeSettings();searchQuery="";lyricAdvanceMs=offsets==null?0:offsets.get(next);
                 generation.incrementAndGet(); selected = null; candidates = List.of(); requestedKey = null;
                 playback = controller.getPlaybackState(); playbackEpoch++;
                 message = "正在查询歌词…"; render();
@@ -235,17 +268,26 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             }
         });
     }
-    void lyricsHeader(View view,boolean enabled) {
-        if(enabled) {
-            if(!headers.containsKey(view))headers.put(view,view.getBackground());
-            tintHeaders();
-        } else if(headers.containsKey(view))view.setBackground(headers.remove(view));
+    void unbindLyricsHeader(View view) { headerActions.detach(view); }
+    boolean bindLyricsHeader(View root,TextView title,CharSequence fallbackTitle) {
+        boolean inserted=headerActions.attach(root,title,fallbackTitle,this,this::refreshHeaders);
+        String key=songKey();
+        headerActions.syncState(openSyncAnchor(key),key,lyricAdvanceMs);
+        return inserted;
     }
-    private void tintHeaders() {
-        for(var entry:new ArrayList<>(headers.entrySet())) {
-            if(selected!=null && selected.hasSynced())entry.getKey().setBackground(new android.graphics.drawable.ColorDrawable(artwork.color()));
-            else entry.getKey().setBackground(entry.getValue());
+    private boolean hasInlineHeader(Context context) {
+        var owner=activity(context);
+        return owner!=null && headerActions.hasUsableHeader(view->activity(view.getContext())==owner);
+    }
+    private void refreshHeaders() {
+        for(var ref:new ArrayList<>(panels.values())) {
+            var panel=ref.get();if(panel!=null)panel.headerMenuAttached(hasInlineHeader(panel.getContext()));
         }
+        tintHeaders();
+    }
+    boolean restoreHeaderBackground(View view) { return headers.restore(view); }
+    void tintHeaders() {
+        headers.paint(selected!=null && selected.hasSynced()?headerActions.visibleHeaders():List.of(),artwork.color());
     }
     private void renderArtwork() {
         for(var ref:new ArrayList<>(panels.values())){var panel=ref.get();if(panel!=null)panel.artwork(artwork);}
@@ -256,7 +298,7 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             controller = session.getController();
             if (playback == null || state == null || Math.abs(position(state) - position()) > 350
                     || playback.getPlaybackSpeed() != state.getPlaybackSpeed()) playbackEpoch++;
-            playback = state; updatePreload();startTicker();
+            playback = state; inheritPlaybackType();lookup(false);updatePreload();startTicker();
         });
     }
     private void startTicker() { if (!ticking) { ticking = true; main.post(tick); } }
@@ -272,25 +314,33 @@ final class LyricsRuntime implements LyricsPanel.Actions {
         return Math.max(0, position);
     }
     private void lookup(boolean force) {
+        lookup(force,false);
+    }
+    private void lookup(boolean force,boolean skipPlainBinding) {
         if (sources == null || song == null) return;
         if (!force && song.key().equals(requestedKey)) return;
         Song requestSong = song;
         requestedKey = song.key();
         long token = generation.incrementAndGet();
         foregroundBusy=false;
-        selected = null; candidates = List.of();
+        selected = null; candidates = List.of();manualResults=false;resultQuery="";
         List<LyricsSource> enabled = sources.enabled();
         Candidate binding = bindings.get(song);
-        if (binding != null && enabled.stream().anyMatch(s -> s.id().equals(binding.sourceId()))) {
-            selected = binding; message = label(binding) + " · 已记住的选择"; render();
+        if (binding != null && (!skipPlainBinding || binding.hasSynced())
+                && enabled.stream().anyMatch(s -> s.id().equals(binding.sourceId()))) {
             LyricsSource provider = sources.provider(binding.sourceId());
-            if (provider != null && provider.supportsEnhancement()
-                    && (force || !binding.hasWords() || !binding.hasTranslation())) refreshBinding(requestSong, binding, provider, token);
-            else foreground(false);
-            return;
+            if(binding.hasSynced()) {
+                selected = binding; message = label(binding) + " · 已记住的选择"; render();
+                if (provider != null && provider.supportsEnhancement()
+                        && (force || !binding.hasWords() || !binding.hasTranslation())) refreshBinding(requestSong, binding, provider, token);
+                else foreground(false);
+                return;
+            }
+            // Keep the old identity on disk, but never display its plain-only cache.
+            if(provider!=null && provider.supportsEnhancement()) {refreshBinding(requestSong,binding,provider,token);return;}
         }
-        if (song.title().isBlank() || song.artist().isBlank()) {
-            message = "歌曲信息不完整，保留原生歌词；可到“歌词设置”搜索";foreground(false); render(); return;
+        if (song.title().isBlank()) {
+            message = "歌曲信息不完整，保留原生歌词；可点“选词”搜索";foreground(false); render(); return;
         }
         if (enabled.isEmpty()) { message = "未启用歌词来源，保留原生歌词";foreground(false); render(); return; }
         String policy=PlaylistPreloader.policy(enabled);
@@ -321,9 +371,9 @@ final class LyricsRuntime implements LyricsPanel.Actions {
                 selected = result.selected(); candidates = result.candidates();
                 if(selected==null && !result.errors().isEmpty() && cached!=null){selected=cached;candidates=pool.candidates();}
                 if (selected != null) message = label(selected) + " · 已自动择优";
-                else if (candidates.stream().anyMatch(Candidate::hasLyrics)) message = "找到候选但匹配不确定，请到“歌词设置”选择歌词";
+                else if (!candidates.isEmpty()) message = "找到候选，但无法确认歌曲版本；可点“选词”手动确认";
                 else if (!result.errors().isEmpty()) message = String.join("；", result.errors()) + "；保留原生歌词";
-                else message = "未找到可用歌词，保留原生歌词";
+                else message = "未找到带时间轴的歌词，保留原生歌词";
                 if (selected != null && !result.errors().isEmpty()) message += " · 部分来源查询失败";
                 render();
             });
@@ -331,12 +381,15 @@ final class LyricsRuntime implements LyricsPanel.Actions {
     }
     private void refreshBinding(Song request, Candidate cached, LyricsSource provider, long token) {
         foreground(true);
-        message = label(cached) + " · 已显示缓存，正在补取增强数据…"; render();
+        message = cached.hasSynced() ? label(cached) + " · 已显示缓存，正在补取增强数据…"
+                : "已过滤旧绑定的纯文本，正在按原歌曲 ID 补取同步歌词…";
+        render();
         network.execute(() -> {
             try {
                 Candidate updated = provider.refresh(cached).preserveCache(cached);
                 main.post(() -> {
                     if (token != generation.get() || !sameSong(request) || !sources.isEnabled(cached.sourceId())) return;
+                    if(!updated.hasSynced()){lookup(true,true);return;}
                     foreground(false);
                     selected = updated; bindings.put(request, updated);
                     message = label(updated) + " · 已记住的选择"; render();
@@ -344,6 +397,10 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             } catch (Exception error) {
                 main.post(() -> {
                     if (token != generation.get() || !sameSong(request)) return;
+                    if(!cached.hasSynced()) {
+                        logger.write("旧绑定未能补取同步歌词，查询其他可同步候选",error);
+                        lookup(true,true);return;
+                    }
                     foreground(false);
                     message = label(cached) + " · 增强取词失败，继续显示缓存：" + error.getMessage();
                     logger.write("绑定增强取词失败", error); render();
@@ -359,11 +416,35 @@ final class LyricsRuntime implements LyricsPanel.Actions {
     }
     private String label(Candidate candidate) {
         return sources.nameOf(candidate.sourceId()) + (candidate.hasWords() ? " · 逐字同步" : candidate.hasSynced() ? " · 逐行同步" : " · 纯文本")
-                + (candidate.hasTranslation() ? " · 含译文" : "")
+                + translationStatus(candidate)
                 + (candidate.enhancementError().isBlank() ? "" : " · " + candidate.enhancementError());
     }
+    private String translationStatus(Candidate candidate) {
+        if (!candidate.translationSourceId().isBlank()) return " · 补译：" + sources.nameOf(candidate.translationSourceId());
+        return candidate.hasTranslation() ? " · 含译文" : "";
+    }
+    private String songKey(){return song==null?"":song.key();}
+    private View openSyncAnchor(String key){return syncExpansion.expandedFor(key)?syncAnchor.get():null;}
+    private boolean updateSyncExpansion(String key) {
+        for(var ref:panels.values()){
+            var panel=ref.get();
+            if(panel!=null && panel.isAttachedToWindow() && panel.isShown())return syncExpansion.update(true,key);
+        }
+        return syncExpansion.update(false,key);
+    }
+    private void presentSync(String key) {
+        View anchor=openSyncAnchor(key);
+        headerActions.syncState(anchor,key,lyricAdvanceMs);
+        for(var ref:new ArrayList<>(panels.values())){
+            var panel=ref.get();
+            if(panel!=null)panel.syncExpansion(anchor,key,lyricAdvanceMs);
+        }
+    }
     private void render() {
+        String key=songKey();updateSyncExpansion(key);
         tintHeaders();
+        presentSync(key);
+        var sheet=settingsSheet.get();if(sheet!=null)sheet.update();
         TextView preloadView=preloadStatus.get();if(preloadView!=null)preloadView.setText(preloadLabel());
         TextView settingView=settingsStatus.get();if(settingView!=null)settingView.setText(message);
         for (var ref : new ArrayList<>(panels.values())) {
@@ -378,6 +459,8 @@ final class LyricsRuntime implements LyricsPanel.Actions {
     }
     @Override public void retry() { main.post(() -> lookup(true)); }
     @Override public void visible() {
+        String key=songKey();
+        if(updateSyncExpansion(key))presentSync(key);
         for(var ref:new ArrayList<>(panels.values())) {
             var panel=ref.get();if(panel!=null && panel.isShown())panel.position(position(),isPlaying(),speed(),playbackEpoch);
         }
@@ -387,8 +470,125 @@ final class LyricsRuntime implements LyricsPanel.Actions {
         if (controller != null) controller.getTransportControls().seekTo(LyricsOffset.seek(timeMs,lyricAdvanceMs,song==null?0:song.durationMs()));
     }
     @Override public int offsetMs(){return lyricAdvanceMs;}
-    private void closeSettings(){var dialog=settingsDialog.get();if(dialog!=null)dialog.dismiss();settingsDialog.clear();}
-    @Override public void settings(Context context) {
+    private void closeSettings(){
+        var sheet=settingsSheet.get();if(sheet!=null)sheet.dismiss();
+        var dialog=settingsDialog.get();if(dialog!=null)dialog.dismiss();settingsDialog.clear();
+    }
+    @Override public void settings(Context context) { openControls(context,"settings"); }
+    @Override public void sync(View anchor) {
+        Context context=anchor.getContext();
+        initialize(context);
+        if(song==null){toast(context,"请先播放歌曲");return;}
+        closeSettings();
+        if(openSyncAnchor(song.key())==anchor)collapseSync();
+        else revealSync(anchor);
+    }
+    @Override public void revealSync(View anchor) {
+        initialize(anchor.getContext());
+        String key=songKey();
+        if(key.isBlank() || !anchor.isAttachedToWindow() || !anchor.isShown() || openSyncAnchor(key)==anchor)return;
+        syncExpansion.reveal(key);syncAnchor=new WeakReference<>(anchor);presentSync(key);
+    }
+    @Override public void collapseSync() {
+        String key=songKey();
+        if(!syncExpansion.expandedFor(key))return;
+        syncExpansion.collapse();syncAnchor.clear();presentSync(key);
+    }
+    @Override public void adjustOffset(String key,int value,boolean relative) {
+        if(song==null || !song.key().equals(key))return;
+        lyricAdvanceMs=relative && Math.abs(value)==LyricsOffset.STEP_MS ? LyricsOffset.nudge(lyricAdvanceMs,value)
+                : LyricsOffset.clamp(relative?lyricAdvanceMs+value:value);
+        offsets.put(song,lyricAdvanceMs);playbackEpoch++;visible();render();
+    }
+    @Override public void choose(Context context) { openControls(context,"choose"); }
+    @Override public void sources(Context context) { openControls(context,"settings"); }
+    private void openControls(Context context,String route) {
+        initialize(context);updateSyncExpansion(songKey());syncExpansion.collapse();settingsRoute=route;render();
+        if(searchQuery.isBlank() && song!=null)searchQuery=SearchQuery.of(song,"").keywords();
+        SettingsDialog sheet=prepareSettings(context);
+        if(sheet!=null)sheet.show();
+        else {toast(context,"歌词控件不可用，已打开基础设置");legacySettings(context);}
+    }
+    private SettingsDialog prepareSettings(Context context) {
+        initialize(context);
+        var cached=settingsSheet.get();
+        if(cached!=null && cached.reusable(context))return cached;
+        if(cached!=null)cached.destroy();
+        try {
+            var sheet=new SettingsDialog(context,moduleApk,new SettingsDialog.Controller() {
+                @Override public SettingsState state(){return settingsState();}
+                @Override public void command(SettingsCommand command){handleSettings(context,command);}
+                @Override public void failed(String reason){
+                    logger.write(reason,null);
+                    if(liveActivity(context)){toast(context,reason+"，已打开基础设置");legacySettings(context);}
+                }
+            });
+            settingsSheet=new WeakReference<>(sheet);return sheet;
+        } catch(java.io.IOException|RuntimeException error) {
+            logger.write("歌词控件初始化失败",error);return null;
+        }
+    }
+    private void handleSettings(Context context,SettingsCommand command) {
+        if(!command.appliesTo(song)) {closeSettings();return;}
+        switch(command.action()) {
+            case "close" -> closeSettings();
+            case "sync" -> {
+                var owner=activity(context);
+                View anchor=owner==null?null:headerActions.syncAnchor(view->activity(view.getContext())==owner);
+                if(anchor==null)for(var ref:panels.values()){
+                    var panel=ref.get();
+                    if(panel!=null && activity(panel.getContext())==activity(context) && (anchor=panel.syncAnchor())!=null)break;
+                }
+                if(anchor!=null)sync(anchor);
+            }
+            case "choose", "settings", "confirmClear" -> {settingsRoute=command.action();render();}
+            case "search" -> {searchQuery=command.text();settingsRoute="choose";manualSearch(context,song,searchQuery);}
+            case "select" -> {
+                Candidate choice=controlCandidates().stream().filter(c->c.sourceId().equals(command.sourceId()) && c.id().equals(command.text())).findFirst().orElse(null);
+                if(choice==null)return;
+                generation.incrementAndGet();foreground(false);selected=choice;bindings.put(song,choice);
+                message=label(choice)+" · 已记住的选择";render();closeSettings();
+            }
+            case "clearBinding" -> {bindings.remove(song);settingsRoute="choose";lookup(true);}
+            case "retry" -> {
+                for(var ref:new ArrayList<>(panels.values())){var panel=ref.get();if(panel!=null)panel.restartRenderer();}
+                retry();
+            }
+            case "translation" -> {translations(command.enabled());render();}
+            case "preload" -> {sources.setPreloadEnabled(command.enabled());updatePreload();render();}
+            case "offset", "step" -> {
+                adjustOffset(command.songKey(),command.offsetMs(),command.action().equals("step"));
+            }
+            case "source", "moveUp" -> {
+                if(sources.provider(command.sourceId())==null)return;
+                if(command.action().equals("source"))sources.setEnabled(command.sourceId(),command.enabled());
+                else sources.moveUp(command.sourceId());
+                updatePreload();lookup(true);render();
+            }
+            default -> { }
+        }
+    }
+    private List<Candidate> controlCandidates() {
+        var available=new ArrayList<>(candidates);
+        if(!manualResults && LyricsResults.displayable(selected) && available.stream().noneMatch(c->c.sourceId().equals(selected.sourceId()) && c.id().equals(selected.id())))available.add(selected);
+        return LyricsResults.ranked(song,resultQuery,available);
+    }
+    private SettingsState settingsState() {
+        String rendererError="";
+        for(var ref:panels.values()){var panel=ref.get();if(panel!=null && panel.isShown() && !panel.rendererStatus().isBlank()){
+            rendererError=panel.rendererStatus();break;
+        }}
+        String quality=selected==null?"":(selected.hasWords()?"逐字同步":selected.hasSynced()?"逐行同步":"纯文本")
+                +translationStatus(selected);
+        return new SettingsState(song,message,selected==null?"":sources.nameOf(selected.sourceId()),quality,
+                rendererError,showTranslation,sources.preloadEnabled(),preloadLabel(),lyricAdvanceMs,
+                sources.ordered().stream().map(s->new SettingsState.Source(s.id(),s.name(),sources.isEnabled(s.id()))).toList(),
+                settingsRoute,searchQuery,foregroundBusy,song!=null && bindings.get(song)!=null,
+                controlCandidates().stream().map(c->new SettingsState.Choice(c.sourceId(),c.id(),c.title(),c.artist(),c.album(),
+                        c.durationMs(),sources.nameOf(c.sourceId()),c.hasWords(),c.hasTranslation(),selected!=null &&
+                        c.sourceId().equals(selected.sourceId()) && c.id().equals(selected.id()))).toList());
+    }
+    private void legacySettings(Context context) {
         initialize(context);closeSettings();
         Song request=song;
         int pad=Math.round(16*context.getResources().getDisplayMetrics().density);
@@ -400,7 +600,7 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             TextView error=new TextView(context);error.setText(panel.rendererStatus());error.setTextSize(15);list.addView(error);break;
         }}
         LinearLayout commands=new LinearLayout(context);
-        Button choose=new Button(context);choose.setText("选择歌词");choose.setOnClickListener(v->{closeSettings();choose(context);});
+        Button choose=new Button(context);choose.setText("选择歌词");choose.setOnClickListener(v->{closeSettings();legacyChoose(context);});
         Button retry=new Button(context);retry.setText("重新获取");retry.setOnClickListener(v->{
             closeSettings();for(var ref:new ArrayList<>(panels.values())){var panel=ref.get();if(panel!=null)panel.restartRenderer();}retry();
         });
@@ -411,23 +611,23 @@ final class LyricsRuntime implements LyricsPanel.Actions {
         TextView amount=new TextView(context);amount.setText(LyricsOffset.label(lyricAdvanceMs));amount.setTextSize(20);amount.setGravity(Gravity.CENTER);list.addView(amount);
         SeekBar slider=new SeekBar(context);slider.setMax(2*LyricsOffset.LIMIT_MS/LyricsOffset.STEP_MS);
         slider.setMinimumHeight(pad*3);
-        slider.setProgress((lyricAdvanceMs+LyricsOffset.LIMIT_MS)/LyricsOffset.STEP_MS);slider.setEnabled(request!=null);
+        slider.setProgress(LyricsOffset.sliderProgress(lyricAdvanceMs));slider.setEnabled(request!=null);
         slider.setContentDescription("本曲歌词同步，左侧延后，右侧提前，范围正负十秒");list.addView(slider);
         java.util.function.IntConsumer apply=value->{
             if(request==null || !sameSong(request)){closeSettings();return;}
             lyricAdvanceMs=LyricsOffset.clamp(value);offsets.put(request,lyricAdvanceMs);playbackEpoch++;
-            amount.setText(LyricsOffset.label(lyricAdvanceMs));slider.setProgress((lyricAdvanceMs+LyricsOffset.LIMIT_MS)/LyricsOffset.STEP_MS);
+            amount.setText(LyricsOffset.label(lyricAdvanceMs));slider.setProgress(LyricsOffset.sliderProgress(lyricAdvanceMs));
             visible();
         };
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            @Override public void onProgressChanged(SeekBar bar,int progress,boolean user){if(user)apply.accept(progress*LyricsOffset.STEP_MS-LyricsOffset.LIMIT_MS);}
+            @Override public void onProgressChanged(SeekBar bar,int progress,boolean user){if(user)apply.accept(LyricsOffset.sliderValue(progress));}
             @Override public void onStartTrackingTouch(SeekBar bar){}
             @Override public void onStopTrackingTouch(SeekBar bar){}
         });
         LinearLayout timingButtons=new LinearLayout(context);
-        String[] names={"延后 0.1 秒","重置","提前 0.1 秒"};int[] deltas={-100,0,100};
+        String[] names={"延后 0.5 秒","重置","提前 0.5 秒"};int[] deltas={-LyricsOffset.STEP_MS,0,LyricsOffset.STEP_MS};
         for(int i=0;i<names.length;i++) {int delta=deltas[i];Button button=new Button(context);button.setText(names[i]);button.setEnabled(request!=null);
-            button.setOnClickListener(v->apply.accept(delta==0?0:lyricAdvanceMs+delta));timingButtons.addView(button,new LinearLayout.LayoutParams(0,-2,1));}
+            button.setOnClickListener(v->apply.accept(delta==0?0:LyricsOffset.nudge(lyricAdvanceMs,delta)));timingButtons.addView(button,new LinearLayout.LayoutParams(0,-2,1));}
         list.addView(timingButtons);
         TextView timingNote=new TextView(context);timingNote.setText("歌词慢了就提前，快了就延后。仅记住本曲，不改变播放进度。");timingNote.setTextSize(14);timingNote.setPadding(0,pad/2,0,pad);list.addView(timingNote);
         TextView sourceTitle=new TextView(context);sourceTitle.setText("歌词来源");sourceTitle.setTextSize(16);list.addView(sourceTitle);
@@ -436,16 +636,16 @@ final class LyricsRuntime implements LyricsPanel.Actions {
         AlertDialog dialog=new AlertDialog.Builder(context).setTitle("歌词设置").setView(scroll).setPositiveButton("完成",null).create();
         settingsDialog=new WeakReference<>(dialog);dialog.show();
     }
-    @Override public void choose(Context context) {
+    private void legacyChoose(Context context) {
         if (song == null) { toast(context, "请先播放歌曲"); return; }
         Song request = song;
-        List<Candidate> available = candidates.stream().filter(Candidate::hasLyrics).toList();
-        if (!available.isEmpty()) showCandidates(context, request, available);
-        else searchDialog(context, request);
+        List<Candidate> available = controlCandidates();
+        if (!available.isEmpty()) legacyCandidates(context, request, available);
+        else legacySearchDialog(context, request);
     }
-    private void searchDialog(Context context, Song request) {
+    private void legacySearchDialog(Context context, Song request) {
         EditText input = new EditText(context);
-        input.setSingleLine(true); input.setText(String.join(" ", request.title(), request.artist()));
+        input.setSingleLine(true); input.setText(SearchQuery.of(request,"").keywords());
         input.setSelectAllOnFocus(true);
         new AlertDialog.Builder(context).setTitle("搜索歌词").setView(input)
                 .setPositiveButton("搜索", (dialog, which) -> manualSearch(context, request, input.getText().toString().strip()))
@@ -460,6 +660,7 @@ final class LyricsRuntime implements LyricsPanel.Actions {
         List<LyricsSource> enabled = sources.enabled();
         if (enabled.isEmpty()) { toast(context, "请先启用歌词来源"); return; }
         long token = generation.incrementAndGet();
+        manualResults=true;
         foreground(true);
         message = "正在搜索候选…"; render();
         WeakReference<Context> owner = new WeakReference<>(context);
@@ -467,21 +668,22 @@ final class LyricsRuntime implements LyricsPanel.Actions {
             List<Candidate> found = new ArrayList<>(); List<String> errors = new ArrayList<>();
             for (LyricsSource source : enabled) {
                 if (token != generation.get()) return;
-                try { found.addAll(source.search(request, query).stream().filter(Candidate::hasLyrics).toList()); }
+                try { found.addAll(LyricsResults.timed(source.search(request, query))); }
                 catch (Exception error) { errors.add(source.name() + "：" + error.getMessage()); }
             }
             main.post(() -> {
                 if (token != generation.get() || !sameSong(request)) return;
                 foreground(false);
                 candidates = List.copyOf(found);
-                message = found.isEmpty() ? (errors.isEmpty() ? "没有搜索到可用歌词" : String.join("；", errors)) : "请选择对应的演唱版本";
+                resultQuery = query;
+                message = found.isEmpty() ? (errors.isEmpty() ? "没有搜索到带时间轴的歌词" : String.join("；", errors)) : "请选择对应的演唱版本";
                 render();
                 Context live = owner.get();
-                if (live != null && liveActivity(live) && !found.isEmpty()) showCandidates(live, request, found);
+                if (live != null && liveActivity(live) && !found.isEmpty() && (settingsSheet.get()==null || !settingsSheet.get().reusable(live))) legacyCandidates(live, request, controlCandidates());
             });
         });
     }
-    private void showCandidates(Context context, Song request, List<Candidate> found) {
+    private void legacyCandidates(Context context, Song request, List<Candidate> found) {
         String[] labels = found.stream().map(c -> c.label() + "\n" + sources.nameOf(c.sourceId()) + " · " + c.durationMs() / 1000 + "秒 · " + (c.hasWords() ? "逐字" : c.hasSynced() ? "逐行" : "纯文本") + (c.hasTranslation() ? " · 含译文" : "")).toArray(String[]::new);
         new AlertDialog.Builder(context).setTitle("选择歌词 · " + request.title())
                 .setItems(labels, (dialog, index) -> {
@@ -490,18 +692,8 @@ final class LyricsRuntime implements LyricsPanel.Actions {
                     foreground(false);
                     selected = found.get(index); bindings.put(request, selected);
                     message = label(selected) + " · 已记住的选择"; render();
-                }).setNeutralButton("修改搜索 / 清除绑定", (dialog, index) -> searchDialog(context, request))
+                }).setNeutralButton("修改搜索 / 清除绑定", (dialog, index) -> legacySearchDialog(context, request))
                 .setNegativeButton("取消", null).show();
-    }
-    @Override public void sources(Context context) {
-        LinearLayout list = new LinearLayout(context); list.setOrientation(LinearLayout.VERTICAL);
-        populateSources(context, list);
-        new AlertDialog.Builder(context).setTitle("歌词来源 · 按顺序查询").setView(list)
-                .setPositiveButton("完成", (dialog, which) -> lookup(true))
-                .setOnCancelListener(dialog -> lookup(true)).show();
-    }
-    private void populateSources(Context context, LinearLayout list) {
-        populateSources(context,list,true);
     }
     private void populateSources(Context context,LinearLayout list,boolean clear) {
         if(clear)list.removeAllViews();
@@ -535,11 +727,14 @@ final class LyricsRuntime implements LyricsPanel.Actions {
     }
     private boolean sameSong(Song request) { return song != null && song.key().equals(request.key()); }
     private static boolean liveActivity(Context context) {
+        var owner=activity(context);return owner!=null && !owner.isFinishing() && !owner.isDestroyed();
+    }
+    private static android.app.Activity activity(Context context) {
         while (context instanceof android.content.ContextWrapper wrapper) {
-            if (context instanceof android.app.Activity activity) return !activity.isFinishing() && !activity.isDestroyed();
+            if (context instanceof android.app.Activity activity) return activity;
             context = wrapper.getBaseContext();
         }
-        return false;
+        return null;
     }
     private static void toast(Context context, String message) { Toast.makeText(context, message, Toast.LENGTH_LONG).show(); }
 }

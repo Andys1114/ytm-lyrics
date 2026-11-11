@@ -2,6 +2,7 @@ package dev.ytmlyrics.source;
 
 import dev.ytmlyrics.core.Candidate;
 import dev.ytmlyrics.core.LyricsSource;
+import dev.ytmlyrics.core.SearchQuery;
 import dev.ytmlyrics.core.Song;
 import dev.ytmlyrics.core.TimedLyrics;
 import java.io.IOException;
@@ -25,7 +26,7 @@ public final class NeteaseSource implements LyricsSource {
     @Override public String name() { return "网易云音乐"; }
     @Override public boolean supportsEnhancement() { return true; }
     @Override public List<Candidate> search(Song song, String query) throws Exception {
-        String keyword = query.isBlank() ? (song.title() + " " + song.artist()).strip() : query;
+        String keyword = SearchQuery.of(song,query).keywords();
         JSONObject response = QqMusicSource.object(transport.get(BASE + "cloudsearch/pc?csrf_token=&s="
                 + URLEncoder.encode(keyword, StandardCharsets.UTF_8) + "&type=1&offset=0&total=true&limit=3"));
         requireCode(response);

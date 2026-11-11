@@ -90,3 +90,4 @@ const harness=hostHtml.replace('<body>',()=>'<body>'+controls)
 await writeFile(path.join(root,'host-preview.html'),harness);
 console.log(`Built offline AMLL preview: ${Math.round(Buffer.byteLength(html) / 1024)} KiB, ${packages.size} licensed packages`);
 console.log(`Built Android local renderer: ${Math.round(Buffer.byteLength(hostHtml) / 1024)} KiB`);
+await import('./build-settings.mjs');

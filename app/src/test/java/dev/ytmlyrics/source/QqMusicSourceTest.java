@@ -3,6 +3,7 @@ package dev.ytmlyrics.source;
 import dev.ytmlyrics.core.Song;
 import org.junit.Test;
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -108,5 +109,30 @@ public class QqMusicSourceTest {
         var noId = lineSource(url -> search("{\"songmid\":\"alphabeticMid\"}"));
         try { noId.search(SONG, ""); fail(); }
         catch (IOException expected) { assertTrue(expected.getMessage().contains("数字歌曲 ID")); }
+    }
+    @Test public void automaticKeywordsNormalizeMetadataAndOmitOnlyKnownVideoPublisher() throws Exception {
+        for(var type:Song.PlaybackType.values()) {
+            var song=new Song("yt","繁體測試、現場","影片發佈者和樂隊","專輯",180000,type);
+            String expected=type==Song.PlaybackType.VIDEO ? "繁体测试 现场" : "繁体测试 现场 影片发布者 乐队";
+            var source=lineSource(url->{
+                assertTrue(url.contains("client_search_cp"));
+                assertTrue(url.contains("?w="+URLEncoder.encode(expected,StandardCharsets.UTF_8)+"&"));
+                return search("");
+            });
+            assertTrue(source.search(song,"").isEmpty());
+        }
+    }
+    @Test public void manualVideoKeywordsKeepPublisherAndReturnedLyricsKeepOriginalScript() throws Exception {
+        var song=new Song("yt","別的歌","影片發佈者","",180000,Song.PlaybackType.VIDEO);
+        var source=lineSource(url->{
+            if(url.contains("client_search_cp")) {
+                assertTrue(url.contains("?w="+URLEncoder.encode("繁体测试 影片发布者 Live",StandardCharsets.UTF_8)+"&"));
+                return search(track(123).replace("自写测试 & 歌","繁體測試").replace("专辑","專輯"));
+            }
+            return lyric("[00:01]自寫原詞");
+        });
+        var candidate=source.search(song,"繁體測試 影片發佈者 Live").get(0);
+        assertEquals("繁體測試",candidate.title());assertEquals("專輯",candidate.album());
+        assertEquals("自寫原詞",candidate.lines().get(0).text());assertEquals("123",candidate.id());
     }
 }

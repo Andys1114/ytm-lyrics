@@ -23,7 +23,7 @@ public final class PlaylistPreloader {
         public static Policy fromSources(List<LyricsSource> sources) {
             return new Policy(sources.stream().map(LyricsSource::id).toList());
         }
-        public String cacheKey() { return "automatic-v2/"+String.join(",",sourceIds); }
+        public String cacheKey() { return "automatic-v3/"+String.join(",",sourceIds); }
     }
     private record Key(Song song,Policy policy) {}
     private static final long RETRY_MS=5*60*1000;

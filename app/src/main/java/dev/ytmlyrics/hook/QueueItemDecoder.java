@@ -9,10 +9,14 @@ final class QueueItemDecoder {
         String id=text(HostPanelFactory.call(item,"t"));
         String title=text(HostPanelFactory.call(item,"h"));
         String artist=text(HostPanelFactory.call(item,"g"));
-        if(id.isBlank() || title.isBlank() || artist.isBlank())return null;
+        if(id.isBlank() || title.isBlank())return null;
         // The published queue has no reliable recording duration. Cache candidates;
         // automatic selection must wait for the real current MediaMetadata duration.
-        return new Song(id,title,artist,"",0);
+        Song.PlaybackType type=Song.PlaybackType.UNKNOWN;
+        try { type=HostPlaybackType.decode(HostPlaybackType.wireType(item)); }
+        catch(ReflectiveOperationException ignored) { /* Missing optional type must not discard a usable queue item. */ }
+        if(artist.isBlank() && type!=Song.PlaybackType.VIDEO)return null;
+        return new Song(id,title,artist,"",0,type);
     }
     private static String text(Object value){return value==null ? "":value.toString();}
 }

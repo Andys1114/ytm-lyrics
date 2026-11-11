@@ -20,4 +20,28 @@ The local renderer bundles AMLL and its runtime dependencies. Full notices are
 included in AMLL-NOTICES.txt. The only upstream change is the manual-scroll
 resume delay (500 ms -> 3000 ms); see demo/build.mjs for the reproducible patch.
 
+MDUI 2.1.5 — MIT:
+https://github.com/zdhxiong/mdui
+Offline settings use unmodified MDUI components. Local styles, accessibility-label
+adaptation and native settings bridge are YTM Lyrics code. Full dependency
+notices are included in SETTINGS-NOTICES.txt; see demo/build-settings.mjs.
+
+Offline Traditional-to-Simplified Chinese conversion — Apache License 2.0:
+opencc4j 1.14.0, heaven 0.13.0, nlp-common 0.0.5 — houbb.
+https://github.com/houbb/opencc4j
+https://github.com/houbb/heaven
+https://github.com/houbb/nlp-common
+Transitive runtime annotation dependency: apiguardian-api 1.0.0 — @API Guardian Team.
+https://github.com/apiguardian-team/apiguardian
+Unmodified Maven Central artifacts, with offline dictionary resources included.
+Used for search/matching only; original song identities and lyric text are retained.
+Full license: Apache-2.0.txt in the APK third-party assets.
+
+Google Material Design Icons — replay (24px), Apache License 2.0:
+https://github.com/google/material-design-icons
+Asset: src/av/replay/materialicons/24px.svg
+Original asset vendored at demo/vendor/material-icons/replay.svg.
+Local adaptation: color/size styling and equivalent native Android Path geometry.
+Full license: Apache-2.0.txt in the APK third-party assets.
+
 These code licenses do not grant rights to lyric text returned by services.

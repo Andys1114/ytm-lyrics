@@ -39,4 +39,20 @@ public class LocalLyricsDocumentTest {
         assertTrue(served.contains("YtmLyricsBridge"));
         assertTrue(served.contains("connect-src 'none'"));
     }
+
+    @Test public void settingsDocumentCannotServeLyricsOrAnyExternalResource() throws Exception {
+        String url="https://ytm-lyrics.invalid/settings.html";
+        String html=new String(Files.readAllBytes(Path.of("src/main/assets/settings/settings.html")),StandardCharsets.UTF_8);
+        var document=new LocalLyricsDocument(url,html);
+        assertEquals(200,document.request(url,"GET",true).status());
+        assertEquals(403,document.request(LocalLyricsDocument.URL,"GET",true).status());
+        assertEquals(403,document.request(url,"GET",false).status());
+        assertEquals(403,document.request(url,"POST",true).status());
+        assertEquals(403,document.request("https://www.mdui.org/","GET",true).status());
+        assertTrue(html.contains("YtmSettingsBridge"));
+        assertTrue(html.contains("connect-src 'none'"));
+        assertTrue(html.contains("font-src 'none'"));
+        assertFalse(html.contains("preview-mode"));
+        assertFalse(html.contains("settingsCommands"));
+    }
 }

@@ -7,8 +7,8 @@ android {
         applicationId = "dev.ytmlyrics"
         minSdk = 36
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.6.0"
+        versionCode = 25
+        versionName = "0.7.14"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -21,6 +21,11 @@ android {
         if (localKey.isFile) storeFile = localKey
     }
     buildTypes { getByName("release") { isMinifyEnabled = false } }
+}
+// Keep the installed preview's identity. Only the unsigned catalog build uses
+// the GitHub-owned package name; the Java namespace and Xposed entry stay fixed.
+androidComponents.onVariants(androidComponents.selector().withBuildType("release")) { variant ->
+    variant.applicationId.set("io.github.andys1114.ytmlyrics")
 }
 dependencies {
     implementation(project(":core"))
